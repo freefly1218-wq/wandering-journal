@@ -1,0 +1,237 @@
+{
+ "format": "trip-content",
+ "version": 1,
+ "exportedAt": "2027-01-01T00:00:00Z",
+ "config": {
+  "version": 1,
+  "title": "我的旅行（範例）",
+  "start": "2027-04-01",
+  "regions": {
+   "a": {
+    "name": "城市 A",
+    "tone": 1
+   },
+   "b": {
+    "name": "城市 B",
+    "tone": 3
+   }
+  },
+  "days": [
+   {
+    "region": "a",
+    "theme": "抵達、市區散步"
+   },
+   {
+    "region": "a",
+    "theme": "近郊一日遊"
+   },
+   {
+    "region": "b",
+    "theme": "移動、賦歸"
+   }
+  ],
+  "people": [
+   {
+    "key": "p1",
+    "name": "我"
+   },
+   {
+    "key": "p2",
+    "name": "旅伴甲"
+   },
+   {
+    "key": "p3",
+    "name": "旅伴乙"
+   },
+   {
+    "key": "p4",
+    "name": "旅伴丙"
+   }
+  ],
+  "groups": [
+   {
+    "id": "A",
+    "name": "A 組",
+    "members": [
+     "p1",
+     "p2"
+    ]
+   },
+   {
+    "id": "B",
+    "name": "B 組",
+    "members": [
+     "p3",
+     "p4"
+    ]
+   }
+  ],
+  "owner": "p1",
+  "rate": 0.2,
+  "costNote": "不含個人購物、伴手禮。",
+  "twdLabel": "台幣部分",
+  "tips": [
+   {
+    "title": "搭機注意事項（範例）",
+    "alert": true,
+    "html": "<ol class=\"tips\"><li><b>報到時間</b>：起飛前 2 小時到機場。</li><li><b>行動電源</b>：只能隨身，<strong class=\"hl\">不可託運</strong>。</li></ol>"
+   }
+  ],
+  "pack": {
+   "items": [
+    "護照",
+    "手機、充電線",
+    "信用卡",
+    "換洗衣物"
+   ],
+   "ownerOverrides": {}
+  }
+ },
+ "private": {
+  "version": 1,
+  "infoTitle": "航班與住宿",
+  "infoHtml": "<div class=\"box\"><h3>航班</h3><div class=\"list\"><div class=\"li\"><span>4/1 去程 航班號碼</span><span>08:00 → 12:00</span></div><div class=\"li\"><span>4/3 回程 航班號碼</span><span>15:00 → 18:00</span></div></div></div><div class=\"box\"><h3>住宿</h3><div class=\"list\"><div class=\"li\"><span>飯店名稱</span><span>4/1–4/3｜2 晚</span></div></div></div>",
+  "cashHtml": "<div class=\"box\"><h3>現金準備（範例）</h3><div class=\"list\"><div class=\"li\"><span>只收現金的項目</span><span>¥0</span></div></div></div>"
+ },
+ "data": {
+  "items": {
+   "d1-01": {
+    "day": 1,
+    "time": "08:00",
+    "end": "12:00",
+    "cat": "transport",
+    "title": "去程航班",
+    "note": "起飛前 2 小時到機場",
+    "move": {
+     "mode": "car",
+     "text": "開車約 40 分"
+    },
+    "done": false
+   },
+   "d1-02": {
+    "day": 1,
+    "time": "13:00",
+    "end": "14:00",
+    "cat": "food",
+    "title": "午餐：範例餐廳",
+    "yen": 5000,
+    "geo": [
+     35.0,
+     139.0
+    ],
+    "info": {
+     "pay": "只收現金",
+     "hours": "11:00–15:00"
+    },
+    "move": {
+     "mode": "walk",
+     "text": "步行 10 分"
+    },
+    "done": false
+   },
+   "d1-03": {
+    "day": 1,
+    "time": "15:00",
+    "end": "17:00",
+    "cat": "sight",
+    "plan": "A",
+    "title": "景點甲（方案A）",
+    "yen": 3000,
+    "done": false
+   },
+   "d1-03b": {
+    "day": 1,
+    "time": "15:00",
+    "end": "17:00",
+    "cat": "sight",
+    "plan": "B",
+    "title": "景點乙（方案B）",
+    "yen": 2000,
+    "done": false
+   },
+   "d1-04": {
+    "day": 1,
+    "time": "18:00",
+    "cat": "stay",
+    "title": "飯店入住",
+    "ntd": 6000,
+    "perPerson": false,
+    "info": {
+     "smoke": "1 樓吸菸區"
+    },
+    "done": false
+   },
+   "d2-01": {
+    "day": 2,
+    "time": "09:00",
+    "end": "16:00",
+    "cat": "activity",
+    "title": "近郊一日遊",
+    "yen": 8000,
+    "done": false
+   },
+   "d3-01": {
+    "day": 3,
+    "time": "10:00",
+    "cat": "transport",
+    "title": "回程航班",
+    "done": false
+   }
+  },
+  "split": {
+   "s01": {
+    "label": "機票",
+    "pay": "台幣",
+    "cur": "TWD",
+    "na": [],
+    "cells": {},
+    "order": 1
+   },
+   "s02": {
+    "label": "4/1 午餐：範例餐廳",
+    "pay": "只收現金",
+    "hint": "¥1,250/ppl",
+    "cur": "JPY",
+    "na": [],
+    "cells": {},
+    "order": 2
+   },
+   "s03": {
+    "label": "4/1 飯店",
+    "pay": "可刷卡",
+    "cur": "TWD",
+    "na": [
+     "p3",
+     "p4"
+    ],
+    "cells": {},
+    "order": 3
+   }
+  },
+  "misc": {
+   "m01": {
+    "label": "停車",
+    "day": "",
+    "amt": null,
+    "cur": "JPY",
+    "pay": "現金",
+    "hint": "¥2,000",
+    "note": "",
+    "order": 1
+   }
+  },
+  "todos": {
+   "t01": {
+    "text": "買旅遊險",
+    "done": false,
+    "order": 1
+   }
+  },
+  "meta": {
+   "maps": {},
+   "plans": {
+    "1": "A"
+   }
+  }
+ }
+}
