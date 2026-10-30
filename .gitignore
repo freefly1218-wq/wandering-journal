@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+backups/
+*.bundle
+*.patch
+__pycache__/
+*.pyc

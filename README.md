@@ -2,6 +2,8 @@
 
 中文 | [English](README.en.md)
 
+`wandering-journal` 的私人日誌改造提案見 [設計與備份文件](docs/README.md)。目前獨立網頁版仍以本機 IndexedDB 儲存；私人登入、Supabase 同步與 Apple Journal 匯入尚未實作。唯讀備份檢查：`python3 scripts/verify_legacy_backup.py /absolute/path/to/backup.json`；回傳 0 表示結構通過，1 表示無效，2 表示涵蓋不完整或需人工檢查，均不代表已通過還原演練。
+
 一個在 claude.ai 上以 artifact 執行的多人旅行行程網頁。這個 repo 只放**框架**：網頁程式、說明文件和一份範例內容檔。每趟旅行的內容（日期、人員、行程、分攤表……）不在 repo 裡，而是存成「內容檔」，隨時匯入框架使用。
 
 | 檔案 | 說明 |
