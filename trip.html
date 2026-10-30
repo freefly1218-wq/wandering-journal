@@ -155,9 +155,13 @@ a { color: inherit; }
 .sync.ok i { background: #8cc56a; }
 .sync.off i { background: var(--accent); }
 
-.days { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
+.segment-nav { display: flex; align-items: end; gap: 10px; margin-bottom: 12px; }
+.segment-nav label { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; color: var(--muted); font-size: 13px; }
+.segment-nav select { width: 100%; min-width: 0; color: var(--fg); }
+.segment-nav button { flex: none; }
+.days { display: flex; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
 .day {
-  border: 0; border-radius: 14px; background: var(--surface); padding: 8px 0 10px;
+  flex: 0 0 56px; border: 0; border-radius: 14px; background: var(--surface); padding: 8px 0 10px;
   display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
 .day small { font-size: 12px; color: var(--muted); }
@@ -487,6 +491,12 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
 .cf-row.d input { grid-column: 1 / -1; grid-row: 2; }
 .cf-row.g { grid-template-columns: auto minmax(0, 1fr) 38px; }
 .cf-row.p { grid-template-columns: minmax(0, 1fr) minmax(0, 120px) auto 38px; }
+.cf-row.segment { grid-template-columns: minmax(0, 1fr) 100px 38px; padding: 12px; border-radius: 14px; background: var(--surface); }
+.cf-row.segment label { min-width: 0; }
+.cf-row.segment .fine { grid-column: 1 / -1; margin: 0; }
+.cf-day-section { padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; }
+.cf-day-section summary { cursor: pointer; font-weight: 700; overflow-wrap: anywhere; }
+.cf-day-section .cf-list { max-height: 360px; overflow-y: auto; padding-top: 10px; }
 .cf-x { flex: none; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 18px; }
 .cf-x:disabled { opacity: .35; }
 .cf-tones { display: flex; gap: 4px; }
@@ -553,6 +563,13 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   .field { font-size: 16px; }
 }
 @media (prefers-reduced-motion: no-preference) { .card, .day, .nav button { transition: background .15s, opacity .15s; } }
+.cf-route { grid-column: 1 / -1; min-width: 0; display: grid; gap: 8px; }
+.route-stop { display: flex; gap: 6px; min-width: 0; }
+.route-stop select { flex: 1; min-width: 0; }
+.region { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.mrow { flex-wrap: wrap; gap: 8px; } .mrow .mv { white-space: normal; overflow-wrap: anywhere; }
+#by-day .li { flex-wrap: wrap; gap: 6px; } #by-day .li span { overflow-wrap: anywhere; }
+#actual-summary { overflow-wrap: anywhere; }
 </style>
 
 <div class="wrap">
@@ -562,7 +579,8 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   </header>
 
   <section id="view-plan" class="panel">
-    <button class="addrow" id="cfg-start" type="button" hidden>現在顯示的是範例行程。按這裡設定你自己的旅行：名稱、日期、天數、旅伴。</button>
+    <button class="addrow" id="cfg-start" type="button" hidden>現在顯示的是範例行程。按這裡設定你的獨旅：名稱、日期、天數、旅行區段。</button>
+    <div class="segment-nav"><label>旅行區段<select class="field" id="segment-picker" aria-label="旅行區段"></select></label><button type="button" class="btn ghost" id="segment-edit" hidden>編輯區段</button></div>
     <nav class="days" id="days" aria-label="選擇日期"></nav>
     <nav class="days mini" id="days-mini" aria-label="選擇日期（固定在頂端）" hidden></nav>
     <div class="dayhead">
@@ -573,6 +591,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       </div>
       <span class="region" id="region"><i></i><span></span></span>
     </div>
+    <p class="fine" id="day-stay"></p>
     <figure class="daymap" id="daymap" hidden></figure>
     <div class="legend" aria-label="類別顏色">
       <span><i style="background:var(--c-transport)"></i>交通</span>
@@ -588,7 +607,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
 
   <section id="view-cost" class="panel" hidden>
     <h2>花費</h2>
-    <div class="box">
+    <details class="box" id="legacy-split"><summary>既有分攤資料</summary>
       <h3>分攤表</h3>
       <p class="fine" id="split-note">已結的填金額，未結的留空白；項目旁的灰字是預算，斜線格代表這個人不需分攤。</p>
       <p class="split-sum" id="split-sum" hidden></p>
@@ -596,22 +615,21 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       <p class="err" id="split-err" role="alert" hidden></p>
       <div class="splitlist" id="split"></div>
       <button class="addrow" id="split-add" type="button" hidden>＋ 新增分攤項目</button>
-    </div>
+    </details>
     <div class="box" id="misc-box" hidden>
-      <h3>零星花費</h3>
-      <p class="fine">分攤表以外的花費（停車、御朱印、小額門票等），只有你看得到。點一筆可修改。</p>
+      <h3>實際花費與換匯</h3><p class="fine">花費保留原幣，另依設定匯率估算台幣。換匯只記錄金流，不列入支出；手續費可另記一筆花費。</p><div id="actual-summary" class="fine"></div>
       <div class="misc" id="misc"></div>
-      <button class="addrow" id="misc-add" type="button">＋ 新增零星花費</button>
+      <button class="addrow" id="misc-add" type="button">＋ 新增花費／換匯</button>
     </div>
     <div id="cash-box"></div>
-    <div class="kpis">
-      <div class="kpi"><small>全團總計（換算台幣）</small><b id="k-total">NT$0</b></div>
+    <details class="box"><summary>行程預算（與實際支出分開）</summary><div class="kpis">
+      <div class="kpi"><small>行程預算（換算台幣）</small><b id="k-total">NT$0</b></div>
       <div class="kpi"><small>每人平均</small><b id="k-per">NT$0</b></div>
       <div class="kpi"><small>日幣部分</small><b id="k-jpy">¥0</b></div>
       <div class="kpi"><small id="k-twd-label">台幣部分</small><b id="k-twd">NT$0</b></div>
     </div>
     <div class="box"><h3>依類別｜點開看細項</h3><div id="by-cat"></div></div>
-    <div class="box"><h3>依天數</h3><div id="by-day" class="list"></div></div>
+    </details><div class="box"><h3>每日實際花費總計</h3><div id="by-day" class="list"></div></div>
     <p class="fine" id="cost-note"></p>
     <div class="box" id="pdf-box" hidden>
       <h3>匯出 PDF</h3>
@@ -652,7 +670,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
 
   <section id="view-notes" class="panel" hidden>
     <h2>筆記</h2>
-    <p class="fine">大家共用的筆記，每則標有是誰寫的。點自己寫的可以修改，點照片可放大。</p>
+    <p class="fine">記下旅途中的觀察與心情。點筆記可修改，點照片可放大。</p>
     <div id="notes" class="notes"></div>
     <button class="addrow" id="note-add" type="button">＋ 新增筆記</button>
   </section>
@@ -728,27 +746,24 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   <form class="sheet" id="cfsheet" role="dialog" aria-modal="true" aria-labelledby="cf-title" novalidate>
     <h2 id="cf-title">行程設定</h2>
     <label>旅行名稱<input class="field" id="cf-name" autocomplete="off" placeholder="例如：京都賞楓五日"></label>
-    <div class="grid2"><label>出發日期<input class="field" id="cf-start" type="date"></label><label>天數<input class="field" id="cf-days" type="number" inputmode="numeric" min="1" max="60"></label></div>
+    <div class="grid2"><label>出發日期<input class="field" id="cf-start" type="date"></label><label>天數<input class="field" id="cf-days" type="number" inputmode="numeric" min="1" max="365"></label></div>
+    <h3 class="cf-h" id="cf-segment-title">旅行區段</h3>
+    <p class="fine">按旅行主題命名，填各區段的起始天數；結束日會接到下一區段之前。第一區段從第 1 天開始。</p>
+    <div class="cf-list" id="cf-segments"></div>
+    <button type="button" class="btn ghost" id="cf-addsegment">＋ 新增區段</button>
     <h3 class="cf-h">地區</h3>
-    <p class="fine">每天可以標一個地區，日期列下方的色點就是地區的顏色。</p>
+    <p class="fine">每天可依順序新增多個地點，形成「克拉克 → 碧瑤」路線；住宿地點另列。色點使用第一個地點的顏色。</p>
     <div class="cf-list" id="cf-regions"></div>
     <button type="button" class="btn ghost" id="cf-addreg">＋ 新增地區</button>
-    <h3 class="cf-h">每天的主題</h3>
+    <h3 class="cf-h">每日路線與主題（依區段展開）</h3>
     <div class="cf-list" id="cf-daylist"></div>
     <p class="fine" id="cf-dayhint"></p>
-    <h3 class="cf-h">分組</h3>
-    <p class="fine">分攤表依分組排列，各組分開結算（例如各家庭一組）。</p>
-    <div class="cf-list" id="cf-groups"></div>
-    <button type="button" class="btn ghost" id="cf-addgrp">＋ 新增分組</button>
-    <h3 class="cf-h">旅伴</h3>
-    <p class="fine">勾「我」的人是預設的墊付人。</p>
-    <div class="cf-list" id="cf-people"></div>
-    <button type="button" class="btn ghost" id="cf-addppl">＋ 新增旅伴</button>
     <h3 class="cf-h">花費</h3>
-    <div class="grid2"><label>日幣→台幣匯率<input class="field" id="cf-rate" inputmode="decimal" autocomplete="off" placeholder="例如：0.21"></label><label>台幣總計的名稱<input class="field" id="cf-twd" autocomplete="off" placeholder="例如：台幣部分（機票）"></label></div>
+    <details><summary>舊行程預算設定</summary><div class="grid2"><label>日幣→台幣匯率<input class="field" id="cf-rate" inputmode="decimal" autocomplete="off" placeholder="例如：0.21"></label><label>台幣總計的名稱<input class="field" id="cf-twd" autocomplete="off" placeholder="例如：台幣部分（機票）"></label></div></details>
+    <div class="grid2"><label>1 美元估算台幣<input class="field" id="cf-usd" inputmode="decimal" placeholder="自行填入匯率"></label><label>1 披索估算台幣<input class="field" id="cf-php" inputmode="decimal" placeholder="自行填入匯率"></label></div><p class="fine">手動估算，非即時牌告匯率；未填的幣別會標示未換算。刷卡可另填實際台幣帳單金額。</p>
     <label>花費說明補充<input class="field" id="cf-note" autocomplete="off" placeholder="例如：不含個人購物。"></label>
     <h3 class="cf-h">預設攜帶清單</h3>
-    <label>一行一項，每個人第一次打開時會放進自己的清單<textarea class="field" id="cf-pack" rows="6"></textarea></label>
+    <label>一行一項，第一次開啟時會放進你的清單<textarea class="field" id="cf-pack" rows="6"></textarea></label>
     <p class="err" id="cf-err" role="alert" hidden></p>
     <div class="actions">
       <button type="button" class="btn ghost" id="cf-cancel">取消</button>
@@ -776,13 +791,16 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
 </div>
 <div class="scrim" id="ms-scrim" hidden>
   <form class="sheet" id="msheet" role="dialog" aria-modal="true" aria-labelledby="ms-title">
-    <h2 id="ms-title">新增零星花費</h2>
-    <label>名稱<input class="field" id="ms-label" placeholder="例如：忍野八海停車" autocomplete="off"></label>
+    <h2 id="ms-title">新增花費／換匯</h2>
+    <label>紀錄類型<select class="field" id="ms-kind"><option value="expense">花費</option><option value="exchange">換匯（不列支出）</option></select></label>
+    <label>名稱<input class="field" id="ms-label" placeholder="例如：午餐／換匯" autocomplete="off"></label>
     <label>日期<select class="field" id="ms-day"></select></label>
-    <div class="seg" id="ms-cur" role="group" aria-label="幣別"><button type="button" data-cur="JPY">¥ 日幣</button><button type="button" data-cur="TWD">NT$ 台幣</button></div>
-    <label>實際金額<input class="field ss-in" id="ms-amt" inputmode="numeric" enterkeyhint="done" autocomplete="off" placeholder="還沒花可先空著"></label>
+    <div class="seg" id="ms-cur" role="group" aria-label="幣別"><button type="button" data-cur="USD">US$ 美金</button><button type="button" data-cur="PHP">₱ 披索</button><button type="button" data-cur="TWD">NT$ 台幣</button><button type="button" data-cur="JPY" id="ms-legacy-jpy" hidden>¥ 舊日幣</button></div>
+    <label>金額（換匯時填付出金額）<input class="field ss-in" id="ms-amt" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="還沒花可先空著"></label>
     <div class="seg" id="ms-pay" role="group" aria-label="付款方式"><button type="button" data-pay="現金">現金</button><button type="button" data-pay="刷卡">刷卡</button></div>
-    <label>預估<input class="field" id="ms-hint" placeholder="例如：¥2,500" autocomplete="off"></label>
+    <div id="ms-exchange" hidden><label>收到幣別<select class="field" id="ms-to-cur"><option value="PHP">披索 PHP</option><option value="USD">美金 USD</option><option value="TWD">台幣 TWD</option></select></label><label>收到金額<input class="field" id="ms-to-amt" inputmode="decimal"></label><p class="fine" id="ms-rate" role="status"></p></div>
+    <label id="ms-actual-wrap">實際台幣帳單金額（選填，取代估算）<input class="field" id="ms-actual" inputmode="decimal"></label>
+    <label>預估<input class="field" id="ms-hint" placeholder="例如：PHP 500" autocomplete="off"></label>
     <label>備註<input class="field" id="ms-note" autocomplete="off"></label>
     <p class="err" id="ms-err" role="alert" hidden></p>
     <div class="actions">
@@ -952,7 +970,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   // meta/config (title, dates, regions, daily themes, people, bill groups, to-do tips, packing list; everyone reads it)
   // and private/config (the 資訊 tab and the cash plan; owner only). The example below shows until the database
   // answers, and stays when it has no config (a fresh copy of the frame).
-  const EXAMPLE_CONFIG = {"version": 1, "title": "我的旅行（範例）", "start": "2027-04-01", "regions": {"a": {"name": "城市 A", "tone": 1}, "b": {"name": "城市 B", "tone": 3}}, "days": [{"region": "a", "theme": "抵達、市區散步"}, {"region": "a", "theme": "近郊一日遊"}, {"region": "b", "theme": "移動、賦歸"}], "people": [{"key": "p1", "name": "我"}, {"key": "p2", "name": "旅伴甲"}, {"key": "p3", "name": "旅伴乙"}, {"key": "p4", "name": "旅伴丙"}], "groups": [{"id": "A", "name": "A 組", "members": ["p1", "p2"]}, {"id": "B", "name": "B 組", "members": ["p3", "p4"]}], "owner": "p1", "rate": 0.2, "costNote": "不含個人購物、伴手禮。", "twdLabel": "台幣部分", "tips": [{"title": "搭機注意事項（範例）", "alert": true, "html": "<ol class=\"tips\"><li><b>報到時間</b>：起飛前 2 小時到機場。</li><li><b>行動電源</b>：只能隨身，<strong class=\"hl\">不可託運</strong>。</li></ol>"}], "pack": {"items": ["護照", "手機、充電線", "信用卡", "換洗衣物"], "ownerOverrides": {}}};
+  const EXAMPLE_CONFIG = {"version": 1, "title": "我的旅行（範例）", "start": "2027-04-01", "regions": {"a": {"name": "城市 A", "tone": 1}, "b": {"name": "城市 B", "tone": 3}}, "days": [{"region": "a", "theme": "抵達、市區散步"}, {"region": "a", "theme": "近郊一日遊"}, {"region": "b", "theme": "移動、賦歸"}], "people": [{"key": "p1", "name": "我"}], "groups": [{"id": "A", "name": "我", "members": ["p1"]}], "owner": "p1", "rate": 0.2, "costNote": "不含個人購物、伴手禮。", "twdLabel": "台幣部分", "tips": [{"title": "搭機注意事項（範例）", "alert": true, "html": "<ol class=\"tips\"><li><b>報到時間</b>：起飛前 2 小時到機場。</li><li><b>行動電源</b>：只能隨身，<strong class=\"hl\">不可託運</strong>。</li></ol>"}], "pack": {"items": ["護照", "手機、充電線", "信用卡", "換洗衣物"], "ownerOverrides": {}}};
   const EXAMPLE_PRIVATE = {"version": 1, "infoTitle": "航班與住宿", "infoHtml": "<div class=\"box\"><h3>航班</h3><div class=\"list\"><div class=\"li\"><span>4/1 去程 航班號碼</span><span>08:00 → 12:00</span></div><div class=\"li\"><span>4/3 回程 航班號碼</span><span>15:00 → 18:00</span></div></div></div><div class=\"box\"><h3>住宿</h3><div class=\"list\"><div class=\"li\"><span>飯店名稱</span><span>4/1–4/3｜2 晚</span></div></div></div>", "cashHtml": "<div class=\"box\"><h3>現金準備（範例）</h3><div class=\"list\"><div class=\"li\"><span>只收現金的項目</span><span>¥0</span></div></div></div>"};
   let cfg = EXAMPLE_CONFIG, pcfg = {}, cfgReady = false, cfgStored = false;
   let START = new Date(), REGIONS = {}, DAYS = [], PEOPLE = [], BILL_GROUPS = [], PNAME = {}, PAYERS = [], GROUP_START = [];
@@ -965,7 +983,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     START = new Date(+m[1], +m[2] - 1, +m[3]);
     REGIONS = {};
     Object.entries(cfg.regions || {}).forEach(([k, r]) => { REGIONS[k] = { name: r.name || k, color: "var(--r-" + Math.min(6, Math.max(1, +r.tone || 1)) + ")" }; });
-    DAYS = cfg.days.map((d) => ({ region: d.region, theme: d.theme || "" }));
+    DAYS = cfg.days.map((d) => ({ ...d, locations: dayLocations(d), theme: d.theme || "" }));
     PEOPLE = (cfg.people || []).map((x) => [x.key, x.name]);
     BILL_GROUPS = Array.isArray(cfg.groups) && cfg.groups.length ? cfg.groups : [{ id: "A", name: "全員", members: PEOPLE.map(([k]) => k) }];
     // People are listed group by group, so each group's chips sit together.
@@ -996,13 +1014,15 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     $("info-body").innerHTML = cfgReady ? pcfg.infoHtml || '<p class="fine">還沒有資訊。</p>' : "";
     $("cash-box").innerHTML = cfgReady && pcfg.cashHtml ? '<div class="box">' + pcfg.cashHtml.replace(/^<div class="box">|<\/div>$/g, "") + "</div>" : "";
     $("k-twd-label").textContent = cfg.twdLabel || "台幣部分";
-    $("cost-note").textContent = "金額取自行程卡片，日幣以匯率 " + RATE + " 換算台幣。" + (cfg.costNote || "");
+    $("cost-note").textContent = "實際支出只計花費紀錄；換匯不列支出。台幣為手動匯率估算，已填台幣帳單者以帳單金額計。" + (cfg.costNote || "");
   }
   // Day pickers in the sheets follow the trip's dates.
+  function groupedDayOptions(valueOf) {
+    return segmentRanges(cfg.segments, DAYS.length).map((s) => '<optgroup label="' + esc(s.name + ' · D' + s.startDay + '–D' + s.endDay) + '">' + DAYS.slice(s.startDay - 1, s.endDay).map((d, j) => { const n = s.startDay + j, dt = dateOf(n); return '<option value="' + esc(String(valueOf(n))) + '">D' + n + ' ' + (dt.getMonth() + 1) + '/' + dt.getDate() + '（' + WD[dt.getDay()] + '）</option>'; }).join('') + '</optgroup>').join('');
+  }
   function dayOptions() {
-    $("f-day").innerHTML = DAYS.map((d, i) => { const dt = dateOf(i + 1); return '<option value="' + (i + 1) + '">D' + (i + 1) + " " + (dt.getMonth() + 1) + "/" + dt.getDate() + "（" + WD[dt.getDay()] + "）</option>"; }).join("");
-    const opts = MISC_DAYS.map((d) => '<option value="' + d + '">' + (d ? splitHead(splitDate({ label: d })) : "整趟") + "</option>").join("");
-    $("ms-day").innerHTML = opts;
+    $("f-day").innerHTML = groupedDayOptions((n) => n);
+    $("ms-day").innerHTML = '<option value="">整趟</option>' + groupedDayOptions((n) => isoOf(dateOf(n)));
   }
   const ICON = {
     transport: '<path d="M7 4h10a2 2 0 0 1 2 2v8a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V6a2 2 0 0 1 2-2zM5 10h14M8.5 14h.01M15.5 14h.01M8 17l-2 3M16 17l2 3"/>',
@@ -1045,12 +1065,67 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     el.lastElementChild.textContent = text;
   }
 
+  // BEGIN_MONEY_ROUTE_HELPERS
+  function dayLocations(d) { return Array.isArray(d.locations) ? d.locations.filter((x) => typeof x === "string" && x) : d.region ? [d.region] : []; }
+  function routeText(d, regions) { return dayLocations(d).map((key) => (regions[key] || {}).name || key).join(" → "); }
+  function decimalAmount(raw) { const t = String(raw).trim().replace(/,/g, ""); return /^(?:\d+)(?:\.\d{1,2})?$/.test(t) && Number.isFinite(+t) ? +t : null; }
+  function effectiveRate(paid, received) { return Number.isFinite(paid) && paid > 0 && Number.isFinite(received) && received > 0 ? received / paid : null; }
+  function spendingSummary(records, rates) {
+    const totals = {}, missing = new Set(); let twd = 0, pending = 0;
+    records.filter((m) => m.kind !== "exchange").forEach((m) => {
+      if (typeof m.amt !== "number" || !Number.isFinite(m.amt) || m.amt < 0) { pending++; return; }
+      const cur = m.cur || "JPY"; totals[cur] = (totals[cur] || 0) + m.amt;
+      if (typeof m.actualTwd === "number" && Number.isFinite(m.actualTwd) && m.actualTwd >= 0) twd += m.actualTwd;
+      else if (cur === "TWD") twd += m.amt;
+      else if (typeof rates[cur] === "number" && Number.isFinite(rates[cur]) && rates[cur] > 0) twd += m.amt * rates[cur];
+      else if (m.amt) missing.add(cur);
+    });
+    return { totals, twd, missing: [...missing], pending };
+  }
+  // END_MONEY_ROUTE_HELPERS
+  // BEGIN_SEGMENT_HELPERS
+  // Only starting days are stored, so adjacent sections cover the trip without gaps.
+  function segmentRanges(raw, total) {
+    const count = Math.max(1, Math.floor(Number(total) || 1)), seen = new Set(), ids = new Set();
+    const starts = (Array.isArray(raw) ? raw : []).filter((s) => s && Number.isInteger(s.startDay) && s.startDay >= 1 && s.startDay <= count)
+      .slice().sort((a, b) => a.startDay - b.startDay).filter((s) => { if (seen.has(s.startDay)) return false; seen.add(s.startDay); return true; })
+      .map((s, i) => { let id = String(s.id || "segment-" + i); while (ids.has(id)) id += "-"; ids.add(id); return { id, name: String(s.name || "未命名區段"), startDay: s.startDay }; });
+    if (!starts.length || starts[0].startDay !== 1) {
+      let id = "whole-trip"; while (ids.has(id)) id += "-";
+      starts.unshift({ id, name: starts.length ? "尚未分區段" : "整趟旅行", startDay: 1 });
+    }
+    return starts.map((s, i) => ({ ...s, endDay: starts[i + 1] ? starts[i + 1].startDay - 1 : count }));
+  }
+  function segmentProblem(raw, total) {
+    if (!Array.isArray(raw) || !raw.length) return "請保留至少一個旅行區段。";
+    if (raw.some((s) => !s || typeof s.name !== "string" || !s.name.trim())) return "請填寫每個旅行區段的名稱。";
+    if (raw.some((s) => !Number.isInteger(s.startDay) || s.startDay < 1 || s.startDay > total)) return "區段起始天數須介於第 1 天與第 " + total + " 天之間。";
+    if (new Set(raw.map((s) => s.startDay)).size !== raw.length) return "各區段的起始天數不能相同。";
+    if (Math.min(...raw.map((s) => s.startDay)) !== 1) return "第一個旅行區段須從第 1 天開始。";
+    if (raw.some((s) => typeof s.id !== "string" || !s.id) || new Set(raw.map((s) => s.id)).size !== raw.length) return "區段資料格式不正確，請重新建立重複的區段。";
+    return "";
+  }
+  // END_SEGMENT_HELPERS
+
   // The day strip exists twice: in place at the top of the plan, and a compact copy fixed to the top of the
   // screen that shows once the original has scrolled out of view (a separate copy, so the page never jumps).
+  function groupedRecords(container, list, dayOf, rowHtml) {
+    const open = new Map([...container.querySelectorAll("details[data-segment-id]")].map((el) => [el.dataset.segmentId, el.open]));
+    const groups = segmentRanges(cfg.segments, DAYS.length).map((s) => ({ ...s, list: list.filter((r) => { const n = dayOf(r); return n >= s.startDay && n <= s.endDay; }) }));
+    groups.push({ id: "outside-trip", name: "整趟／旅程外日期", list: list.filter((r) => { const n = dayOf(r); return !(n >= 1 && n <= DAYS.length); }) });
+    container.innerHTML = groups.filter((g) => g.list.length).map((g) => '<details class="cf-day-section" data-segment-id="' + esc(g.id) + '"' + ((open.has(g.id) ? open.get(g.id) : g.startDay ? day >= g.startDay && day <= g.endDay : true) ? ' open' : '') + '><summary>' + esc(g.name) + (g.startDay ? ' · D' + g.startDay + '–D' + g.endDay : '') + '</summary><div class="cf-list">' + g.list.map(rowHtml).join("") + '</div></details>').join("");
+  }
+  const miscDayNumber = (m) => m.date ? isoTripDay(m.date) : Math.max(0, MISC_DAYS.indexOf(m.day));
+  function isoTripDay(value) { const n = DAYS.findIndex((_, i) => isoOf(dateOf(i + 1)) === value); return n < 0 ? 0 : n + 1; }
   function renderDays() {
     if (!cfgReady) { $("days").innerHTML = ""; $("days-mini").innerHTML = ""; return; }
+    const segments = segmentRanges(cfg.segments, DAYS.length);
+    const segment = segments.find((s) => day >= s.startDay && day <= s.endDay) || segments[0];
+    $("segment-picker").innerHTML = segments.map((s) => '<option value="' + esc(s.id) + '"' + (s.id === segment.id ? " selected" : "") + ">" + esc(s.name) + " · D" + s.startDay + "–D" + s.endDay + "</option>").join("");
+    $("segment-edit").hidden = !isOwner;
     const html = DAYS.map((d, i) => {
       const n = i + 1, dt = dateOf(n);
+      if (n < segment.startDay || n > segment.endDay) return "";
       return '<button type="button" class="day" data-day="' + n + '" aria-pressed="' + (n === day) + '" aria-label="第 ' + n + ' 天 ' + (dt.getMonth() + 1) + "/" + dt.getDate() + '"><small>' + WD[dt.getDay()] + "</small><b>" + dt.getDate() + '</b><i style="background:' + (REGIONS[d.region] || { color: "var(--r-1)" }).color + '"></i></button>';
     }).join("");
     [$("days"), $("days-mini")].forEach((strip) => {
@@ -1382,7 +1457,8 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     $("daytheme").textContent = meta.theme;
     const r = REGIONS[meta.region] || { name: "", color: "var(--r-1)" };
     $("region").firstElementChild.style.background = r.color;
-    $("region").lastElementChild.textContent = r.name;
+    $("region").lastElementChild.textContent = routeText(meta, REGIONS) + (dayLocations(meta).length > 1 ? " · 移動日" : "");
+    $("day-stay").textContent = meta.overnight && REGIONS[meta.overnight] ? "住宿：" + REGIONS[meta.overnight].name : "";
     $("addrow").hidden = !canWrite || !db;
     const tl = $("timeline");
     if (!db) {
@@ -1444,16 +1520,11 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     const cats = Object.entries(byCat).map(([k, list]) => [k, list, list.reduce((s, it) => s + twdOf(it), 0)]).sort((a, b) => b[2] - a[2]);
     const max = Math.max(1, ...cats.map((c) => c[2]));
     $("by-cat").innerHTML = cats.length ? cats.map(([k, list, v]) => {
-      const sub = list.slice().sort((a, b) => a.day - b.day || String(a.time).localeCompare(String(b.time)))
-        .map((it) => "<div><span>D" + it.day + " " + esc(it.title) + "</span><span>" + moneyOf(it) + "</span></div>").join("");
+      const sub = segmentRanges(cfg.segments, DAYS.length).map((s) => { const rows = list.filter((it) => it.day >= s.startDay && it.day <= s.endDay); return rows.length ? '<details class="cf-day-section"><summary>' + esc(s.name) + '</summary>' + rows.slice().sort((a, b) => a.day - b.day || String(a.time).localeCompare(String(b.time))).map((it) => "<div><span>D" + it.day + " " + esc(it.title) + "</span><span>" + moneyOf(it) + "</span></div>").join("") + "</details>" : ""; }).join("");
       return '<details class="cat" data-cat="' + k + '"' + (openCats.has(k) ? " open" : "") + '><summary><div class="bar"><span class="chev">▶</span><span>' + esc(CATS[k] || "其他") +
         '</span><span class="track"><span class="fill" style="display:block;width:' + (v / max * 100).toFixed(1) + '%;background:var(--c-' + k + ')"></span></span><span class="v">' + ntd(v) + '</span></div></summary><div class="sub">' + sub + "</div></details>";
     }).join("") : '<p class="fine">還沒有填金額的行程。</p>';
-    $("by-day").innerHTML = DAYS.map((d, i) => {
-      const n = i + 1, dt = dateOf(n);
-      const s = priced.filter((it) => it.day === n).reduce((a, it) => a + twdOf(it), 0);
-      return '<div class="li"><span>D' + n + " " + (dt.getMonth() + 1) + "/" + dt.getDate() + "（" + WD[dt.getDay()] + "）" + esc(d.theme) + "</span><span>" + ntd(s) + "</span></div>";
-    }).join("");
+    renderDailySpending();
     renderSplit();
     renderMisc();
   }
@@ -1482,6 +1553,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
 
   function renderSplit() {
     const box = $("split");
+    $("legacy-split").hidden = !split.length;
     $("split-add").hidden = !isOwner || !db || !splitLoaded;
     if (!db || !splitLoaded) { box.innerHTML = '<p class="fine">' + (db ? "正在載入分攤表…" : "需要登入 claude.ai 才能看到分攤表。") + "</p>"; return; }
     if (!split.length) { box.innerHTML = '<p class="fine">分攤表還沒有項目。</p>'; return; }
@@ -1495,6 +1567,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     BILL_GROUPS.forEach((g) => { sums[g.id] = { paid: money(), owed: money() }; });
     PEOPLE.forEach(([k]) => { adv[k] = { out: money(), back: Object.fromEntries(BILL_GROUPS.map((g) => [g.id, money()])) }; });
     let html = '<p class="split-legend"><span><i class="owed"></i>白＝尚欠</span><span><i class="paid"></i>黃＝已結</span><span><i class="blank"></i>虛線＝還沒記</span></p>';
+    const cardRows = [];
     let grp = null, sec = null;
     rows.forEach((r) => {
       const s = full.includes(r) ? "full" : "todo";
@@ -1515,6 +1588,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       const sub = [r.pay, r.hint ? "預算 " + r.hint : ""].filter(Boolean).join("｜");
       const payCls = "sc-payer" + (settled || payer === "none" ? " done" : "");
       const head = "<b>" + esc(splitLabel(r)) + "</b>" + (sub ? "<small>" + esc(sub) + "</small>" : "");
+      const cardStart = html.length;
       html += '<article class="scard"><div class="sc-top">' + (isOwner ? '<button type="button" class="sc-t sc-tbtn" data-spedit="' + esc(r.id) + '" aria-label="' + esc(splitLabel(r)) + '，點一下修改或刪除">' + head + "</button>" : '<div class="sc-t">' + head + "</div>") +
         (isOwner ? '<button type="button" class="' + payCls + '" data-payrow="' + esc(r.id) + '" aria-label="墊付：' + esc(payText) + '，點一下修改">' + esc(payText) + "</button>"
           : '<span class="' + payCls + '">' + esc(payText) + "</span>") + "</div>";
@@ -1538,8 +1612,10 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
         html += "</div></div>";
       });
       html += rcStrip("split", r) + "</article>";
+      const date = (/^(\d{1,2}\/\d{1,2})/.exec(r.label || "") || [])[1];
+      cardRows.push({ n: Math.max(0, MISC_DAYS.indexOf(date)), html: '<h4 class="sday">' + esc(splitHead(splitDate(r))) + (complete(r) ? " · 已填完" : " · 待填") + '</h4>' + html.slice(cardStart) });
     });
-    box.innerHTML = html;
+    groupedRecords(box, cardRows, (r) => r.n, (r) => r.html);
     const fmtMoney = (s, sep) => [s.JPY ? fmtCur("JPY", s.JPY) : "", s.TWD ? fmtCur("TWD", s.TWD) : ""].filter(Boolean).join(sep);
     const lines = PEOPLE.filter(([k]) => fmtMoney(adv[k].out, "")).map(([k, n]) =>
       n + "墊付 " + fmtMoney(adv[k].out, "＋") + "，待收回：" + BILL_GROUPS.map((g) => g.name + " " + (fmtMoney(adv[k].back[g.id], "＋") || "0")).join("、"));
@@ -1696,35 +1772,59 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   // 零星花費: spending outside the split list (shrine stamps, parking, small tickets), visible to and kept by the owner only.
   // Each doc: label, day ("11/8", or "" for the whole trip), amt (actual, may be null), cur, hint (estimate text), pay, note.
   let misc = [], miscLoaded = false, mEdit = null, mDelArmed = false;
+  const originalMoney = (cur, amount) => cur + " " + amount.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const estimateRates = () => ({ ...(cfg.estimateRates || {}), JPY: RATE });
+  function summaryText(records) {
+    const v = spendingSummary(records, estimateRates());
+    return (Object.keys(v.totals).length ? Object.entries(v.totals).map(([cur, amt]) => originalMoney(cur, amt)).join(" ＋ ") : "原幣 0") + "｜" + (v.missing.length ? "已換算部分約 " : "台幣約 ") + ntd(v.twd) + (v.missing.length ? "（" + v.missing.join("、") + " 未填匯率）" : "") + (v.pending ? "；" + v.pending + " 筆金額未填" : "");
+  }
+  function renderDailySpending() {
+    groupedRecords($("by-day"), DAYS.map((d, i) => ({ ...d, n: i + 1 })), (d) => d.n, (d) => '<div class="li"><span>' + esc(dayLabel(d.n)) + " " + esc(routeText(d, REGIONS)) + '</span><span>' + esc(summaryText(misc.filter((m) => miscDayNumber(m) === d.n))) + '</span></div>');
+  }
+  function miscValueText(m) {
+    if (m.kind === "exchange") { const r = effectiveRate(m.amt, m.toAmt); return originalMoney(m.cur, m.amt || 0) + " → " + originalMoney(m.toCur, m.toAmt || 0) + (r ? "（1 " + m.cur + " = " + r.toFixed(4) + " " + m.toCur + "）" : ""); }
+    return cellNum(m.amt) === null ? "未填" : originalMoney(m.cur || "JPY", m.amt);
+  }
   function renderMisc() {
     $("misc-box").hidden = !isOwner || !db;
     if (!isOwner || !db) return;
     if (!miscLoaded) { $("misc").innerHTML = '<p class="fine">正在載入…</p>'; return; }
-    const list = misc.slice().sort((a, b) => splitDate({ label: a.day }) - splitDate({ label: b.day }) || (a.order ?? 0) - (b.order ?? 0));
-    const tot = { JPY: 0, TWD: 0 };
-    const rows = list.map((m) => {
-      const v = cellNum(m.amt), cur = m.cur === "TWD" ? "TWD" : "JPY";
-      if (v !== null) tot[cur] += v;
-      const sub = [m.day ? splitHead(splitDate({ label: m.day })) : "整趟", m.pay, m.hint ? "預估 " + m.hint : "", m.note].filter(Boolean).join("｜");
-      return '<div class="mitem"><button type="button" class="mrow" data-misc="' + esc(m.id) + '"><span><b>' + esc(m.label || "（未命名）") + "</b><small>" + esc(sub) + "</small></span>" +
-        '<span class="' + (v === null ? "mv none" : "mv") + '">' + (v === null ? "未填" : fmtCur(cur, v)) + "</span></button>" + rcStrip("misc", m) + "</div>";
-    }).join("");
-    const t = [tot.JPY ? fmtCur("JPY", tot.JPY) : "", tot.TWD ? fmtCur("TWD", tot.TWD) : ""].filter(Boolean).join("＋");
-    $("misc").innerHTML = (rows || '<p class="fine">還沒有零星花費。</p>') + (t ? '<p class="mtot">已花 ' + t + "</p>" : "");
+    $("actual-summary").textContent = summaryText(misc);
+    const list = misc.slice().sort((a, b) => miscDayNumber(a) - miscDayNumber(b) || (a.order ?? 0) - (b.order ?? 0));
+    groupedRecords($("misc"), list, miscDayNumber, (m) => {
+      const sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.pay, m.note].filter(Boolean).join("｜");
+      return '<div class="mitem"><button type="button" class="mrow" data-misc="' + esc(m.id) + '"><span><b>' + esc(m.label || "（未命名）") + '</b><small>' + esc(sub) + '</small></span><span class="mv">' + esc(miscValueText(m)) + '</span></button>' + rcStrip("misc", m) + '</div>';
+    });
+    if (!list.length) $("misc").innerHTML = '<p class="fine">還沒有紀錄。</p>';
+    renderDailySpending();
+  }
+  function updateExchangeFields() {
+    const exchange = $("ms-kind").value === "exchange";
+    $("ms-exchange").hidden = !exchange; $("ms-pay").hidden = exchange; $("ms-actual-wrap").hidden = exchange;
+    const rate = effectiveRate(decimalAmount($("ms-amt").value), decimalAmount($("ms-to-amt").value));
+    $("ms-rate").textContent = segVal("ms-cur", "cur") === $("ms-to-cur").value ? "請選擇不同的付出與收到幣別。" : rate ? "成交匯率：1 " + segVal("ms-cur", "cur") + " = " + rate.toFixed(4) + " " + $("ms-to-cur").value : "填入實付與實收金額，自動試算成交匯率。";
   }
   function openMisc(m) {
     if (!isOwner || !db) return;
     mEdit = m || null; mDelArmed = false;
-    $("ms-title").textContent = m ? "修改零星花費" : "新增零星花費";
+    $("ms-title").textContent = m ? "修改花費／換匯" : "新增花費／換匯";
+    $("ms-kind").value = m && m.kind === "exchange" ? "exchange" : "expense";
+    $("ms-to-cur").value = m && m.toCur || "PHP"; $("ms-to-amt").value = m && m.toAmt != null ? m.toAmt : "";
+    $("ms-actual").value = m && m.actualTwd != null ? m.actualTwd : "";
+    $("ms-legacy-jpy").hidden = !(m && (!m.cur || m.cur === "JPY"));
     $("ms-label").value = m ? m.label || "" : "";
-    $("ms-day").value = m && MISC_DAYS.includes(m.day) ? m.day : "";
-    segSet("ms-cur", "cur", m && m.cur === "TWD" ? "TWD" : "JPY");
+    const savedDate = m && (m.date || (MISC_DAYS.includes(m.day) && m.day ? isoOf(dateOf(MISC_DAYS.indexOf(m.day))) : ""));
+    dayOptions();
+    if (savedDate && !isoTripDay(savedDate)) $("ms-day").insertAdjacentHTML("beforeend", '<option value="' + esc(savedDate) + '">' + esc(savedDate) + '（旅程外）</option>');
+    $("ms-day").value = m ? savedDate || "" : isoOf(dateOf(day));
+    segSet("ms-cur", "cur", m ? m.cur || "JPY" : "PHP");
     segSet("ms-pay", "pay", m && m.pay === "刷卡" ? "刷卡" : "現金");
-    $("ms-amt").value = m && cellNum(m.amt) !== null ? fmtNum(m.amt) : "";
+    $("ms-amt").value = m && cellNum(m.amt) !== null ? String(m.amt) : "";
     $("ms-hint").value = m ? m.hint || "" : "";
     $("ms-note").value = m ? m.note || "" : "";
     $("ms-del").hidden = !m; $("ms-del").textContent = "刪除";
     $("ms-err").hidden = true;
+    updateExchangeFields();
     $("ms-scrim").hidden = false;
     (m ? $("ms-amt") : $("ms-label")).focus();
   }
@@ -1740,15 +1840,23 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   $("msheet").addEventListener("click", (e) => {
     const b = e.target.closest(".seg button");
     if (b) b.parentElement.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    updateExchangeFields();
   });
   $("msheet").addEventListener("submit", (e) => {
     e.preventDefault();
     const body = {
-      label: $("ms-label").value.trim(), day: $("ms-day").value, amt: numIn($("ms-amt")), cur: segVal("ms-cur", "cur"),
+      label: $("ms-label").value.trim(), day: $("ms-day").value ? MISC_DAYS[isoTripDay($("ms-day").value)] || "" : "", amt: decimalAmount($("ms-amt").value), cur: segVal("ms-cur", "cur"),
       pay: segVal("ms-pay", "pay"), hint: $("ms-hint").value.trim(), note: $("ms-note").value.trim(),
       order: mEdit && typeof mEdit.order === "number" ? mEdit.order : Date.now(),
       receipts: mEdit && Array.isArray(mEdit.receipts) ? mEdit.receipts : []
     };
+    body.kind = $("ms-kind").value;
+    body.date = $("ms-day").value;
+    body.actualTwd = body.kind === "expense" ? decimalAmount($("ms-actual").value) : null;
+    body.toCur = body.kind === "exchange" ? $("ms-to-cur").value : null;
+    body.toAmt = body.kind === "exchange" ? decimalAmount($("ms-to-amt").value) : null;
+    const invalid = ($("ms-amt").value.trim() && body.amt === null) || (body.kind === "expense" && $("ms-actual").value.trim() && body.actualTwd === null) || (body.kind === "exchange" && (!effectiveRate(body.amt, body.toAmt) || body.cur === body.toCur));
+    if (invalid) { $("ms-err").textContent = "請填有效金額（最多兩位小數）；換匯兩邊金額須大於 0，且幣別不同。"; $("ms-err").hidden = false; return; }
     if (!body.label) { $("ms-err").textContent = "請填名稱。"; $("ms-err").hidden = false; return; }
     miscWrite(() => (mEdit ? db.doc("misc/" + mEdit.id).set(body) : db.collection("misc").add(body)));
   });
@@ -1764,10 +1872,8 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   $("ms-cancel").addEventListener("click", closeMisc);
   $("ms-scrim").addEventListener("click", (e) => { if (e.target === $("ms-scrim")) closeMisc(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("ms-scrim").hidden) closeMisc(); });
-  $("ms-amt").addEventListener("input", () => {
-    const inp = $("ms-amt"), raw = inp.value.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
-    inp.value = raw ? fmtNum(Number(raw)) : "";
-  });
+  $("msheet").addEventListener("input", updateExchangeFields);
+  $("msheet").addEventListener("change", updateExchangeFields);
   // Notes: the owner's private notes, each with a title, optional day, text and photos (asset ids).
   let notes = [], notesLoaded = false, canNote = false, myId = null, noteUser = null, assets = null, noteBy = {};
   const noteSubs = new Map(), noteNames = {};
@@ -1793,14 +1899,15 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     if (!notesLoaded) { $("notes").innerHTML = '<p class="fine">正在載入…</p>'; return; }
     // Newest date first; notes without a date go last.
     const list = notes.slice().sort((a, b) => (noteTime(b) ?? -Infinity) - (noteTime(a) ?? -Infinity) || (b.order ?? 0) - (a.order ?? 0));
-    $("notes").innerHTML = list.length ? list.map((n) => {
+    groupedRecords($("notes"), list, (n) => isoTripDay(isoOf(noteDate(n))), (n) => {
       const ph = Array.isArray(n.photos) ? n.photos : [];
       const mine = canNote && (isOwner || n.uid === myId);
       return '<article class="ncard' + (mine ? " mine" : "") + '"' + (mine ? ' data-note="' + esc(n.uid + "/" + n.id) + '"' : "") + '><div class="nc-h"><b>' + esc(n.title || "（無標題）") + "</b><small>" + esc(noteDateText(n)) + "</small></div>" +
         '<span class="nc-by">' + esc(noteNames[n.uid] || (n.uid === myId ? "我" : "家人")) + "</span>" +
         (n.text ? '<p class="nc-t">' + esc(n.text) + "</p>" : "") +
         (ph.length ? '<div class="nc-ph">' + ph.map((id) => '<img src="' + blobUrl(id) + '" alt="筆記照片" loading="lazy" data-view="' + esc(id) + '">').join("") + "</div>" : "") + "</article>";
-    }).join("") : '<p class="fine">還沒有筆記。</p>';
+    });
+    if (!list.length) $("notes").innerHTML = '<p class="fine">還沒有筆記。</p>';
     // Writers' names come from their accounts; resolved once per person, then the list redraws.
     const missing = [...new Set(list.map((n) => n.uid))].filter((u) => !(u in noteNames));
     if (missing.length && noteUser && noteUser.profiles) {
@@ -2045,9 +2152,8 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     ).join("") : '<p class="fine">待辦都清空了。</p>';
   }
 
-  // Trip settings (owner): title, dates, regions, each day's theme and region, bill groups, people, rate and the
-  // packing list defaults. Edited as a draft and written to meta/config in one go; tips and private/config keep
-  // their stored values. Starting from the built-in example gives a blank title and today's date.
+  // Trip settings are edited as a draft. Existing people/groups remain compatible with imported trips;
+  // new trips have one person, and the solo settings form does not expose companion or group fields.
   const TONES = ["綠", "藍", "橘", "金", "紫", "粉"];
   let cd = null;
   const cfErr = (t) => { $("cf-err").textContent = t; $("cf-err").hidden = !t; return false; };
@@ -2060,21 +2166,24 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     const regions = Object.entries(c.regions || {}).map(([key, r]) => ({ key, name: r.name || key, tone: Math.min(6, Math.max(1, +r.tone || 1)) }));
     cd = {
       regions: regions.length ? regions : [{ key: "r1", name: "地區 1", tone: 1 }],
-      days: (c.days || []).map((d) => ({ region: d.region || "", theme: cfgStored ? d.theme || "" : "" })),
+      days: (c.days || []).map((d) => ({ ...d, locations: dayLocations(d), overnight: d.overnight || "", region: d.region || "", theme: cfgStored ? d.theme || "" : "" })),
+      segments: segmentRanges(c.segments, (c.days || []).length).map(({ id, name, startDay }) => ({ id, name, startDay })),
       groups: groups.map(({ id, name }) => ({ id, name })),
       people: (c.people || []).map((x) => ({ key: x.key, name: x.name || "", group: (groups.find((g) => g.members.includes(x.key)) || groups[0]).id })),
       owner: c.owner, start: cfgStored ? c.start : isoOf(new Date())
     };
-    if (!cd.days.length) cd.days.push({ region: cd.regions[0].key, theme: "" });
+    if (!cd.days.length) cd.days.push({ region: cd.regions[0].key, locations: [cd.regions[0].key], overnight: "", theme: "" });
     if (!cd.people.length) cd.people.push({ key: "p1", name: "我", group: cd.groups[0].id });
     $("cf-name").value = cfgStored ? c.title || "" : "";
     $("cf-start").value = cd.start;
     $("cf-days").value = cd.days.length;
     $("cf-rate").value = c.rate || 0.2;
+    $("cf-usd").value = (c.estimateRates || {}).USD || ""; $("cf-php").value = (c.estimateRates || {}).PHP || "";
     $("cf-twd").value = c.twdLabel || "";
     $("cf-note").value = c.costNote || "";
     $("cf-pack").value = (c.pack && Array.isArray(c.pack.items) ? c.pack.items : []).join("\n");
     cfErr("");
+    $("cf-daylist").innerHTML = "";
     drawCfg();
     $("cf-scrim").hidden = false;
     if (!cfgStored) $("cf-name").focus();
@@ -2085,8 +2194,8 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(cd.start || ""), dt = m ? new Date(+m[1], +m[2] - 1, +m[3] + i) : null;
     return "D" + (i + 1) + (dt ? " " + (dt.getMonth() + 1) + "/" + dt.getDate() + "（" + WD[dt.getDay()] + "）" : "");
   };
-  const cfDayRow = (d, i) => '<div class="cf-row d"><b>' + cfDayLabel(i) + '</b><input class="field" data-cf="theme" data-i="' + i + '" value="' + esc(d.theme) + '" placeholder="這天的主題" aria-label="第 ' + (i + 1) + ' 天主題">' +
-    '<select class="field cf-sel" data-cf="dreg" data-i="' + i + '" aria-label="第 ' + (i + 1) + ' 天地區">' + cfRegOpts(d.region) + "</select></div>";
+  const cfRouteFields = (d, i) => '<div class="cf-route">' + d.locations.map((key, j) => '<div class="route-stop"><select class="field" data-cf="location" data-i="' + i + '" data-j="' + j + '" aria-label="第 ' + (i + 1) + ' 天地點 ' + (j + 1) + '">' + cfRegOpts(key) + '</select><button class="btn ghost" type="button" data-cf="locup" data-i="' + i + '" data-j="' + j + '" aria-label="地點 ' + (j + 1) + ' 往前移"' + (j ? '' : ' disabled') + '>↑</button><button class="btn ghost" type="button" data-cf="locdel" data-i="' + i + '" data-j="' + j + '" aria-label="移除地點 ' + (j + 1) + '">×</button></div>').join("") + '<button class="btn ghost" type="button" data-cf="locadd" data-i="' + i + '">＋ 地點</button><label>住宿地點<select class="field" data-cf="overnight" data-i="' + i + '" aria-label="第 ' + (i + 1) + ' 天住宿地點">' + cfRegOpts(d.overnight) + '</select></label></div>';
+  const cfDayRow = (d, i) => '<div class="cf-row d" data-day-index="' + i + '"><b>' + cfDayLabel(i) + '</b><input class="field" data-cf="theme" data-i="' + i + '" value="' + esc(d.theme) + '" placeholder="這天的主題" aria-label="第 ' + (i + 1) + ' 天主題">' + cfRouteFields(d, i) + '</div>';
   const cfDayHint = () => {
     const later = items.filter((it) => it.day > cd.days.length).length;
     $("cf-dayhint").textContent = later ? "第 " + cd.days.length + " 天之後還有 " + later + " 個行程，天數減少後會看不到（不會刪除，把天數加回來就會出現）。" : "";
@@ -2095,64 +2204,131 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   // a redraw would replace the field just tapped.
   function cfSyncDays() {
     const list = $("cf-daylist");
-    while (list.children.length > cd.days.length) list.lastElementChild.remove();
-    for (let i = list.children.length; i < cd.days.length; i++) list.insertAdjacentHTML("beforeend", cfDayRow(cd.days[i], i));
-    [...list.children].forEach((row, i) => { row.firstElementChild.textContent = cfDayLabel(i); });
+    const rows = new Map([...list.querySelectorAll("[data-day-index]")].map((row) => [+row.dataset.dayIndex, row]));
+    const sections = new Map([...list.children].map((el) => [el.dataset.segmentId, el]));
+    const ranges = segmentRanges(cd.segments, cd.days.length), keep = new Set();
+    ranges.forEach((s) => {
+      let section = sections.get(s.id);
+      if (!section) {
+        section = document.createElement("details"); section.className = "cf-day-section"; section.dataset.segmentId = s.id;
+        section.innerHTML = '<summary></summary><div class="cf-list"></div>';
+        section.open = day >= s.startDay && day <= s.endDay;
+      }
+      keep.add(section);
+      section.firstElementChild.textContent = s.name + " · D" + s.startDay + "–D" + s.endDay;
+      const body = section.lastElementChild;
+      for (let i = s.startDay - 1; i < s.endDay; i++) {
+        let row = rows.get(i);
+        if (!row) { body.insertAdjacentHTML("beforeend", cfDayRow(cd.days[i], i)); row = body.lastElementChild; }
+        else body.appendChild(row);
+        row.firstElementChild.textContent = cfDayLabel(i);
+        const theme = row.querySelector('[data-cf="theme"]');
+        if (theme.value !== cd.days[i].theme) theme.value = cd.days[i].theme;
+        const route = row.querySelector(".cf-route");
+        if (!route.contains(document.activeElement)) route.outerHTML = cfRouteFields(cd.days[i], i);
+      }
+      list.appendChild(section);
+    });
+    rows.forEach((row, i) => { if (i >= cd.days.length) row.remove(); });
+    [...list.children].forEach((el) => { if (!keep.has(el)) el.remove(); });
+    cd.segments.forEach((s, i) => {
+      const hint = $("cf-segments").querySelector('[data-segment-hint="' + i + '"]');
+      const range = ranges.find((r) => r.id === s.id);
+      if (hint) hint.textContent = range ? cfDayLabel(range.startDay - 1) + " → " + cfDayLabel(range.endDay - 1) : "請調整起始天數。";
+    });
     cfDayHint();
   }
+  function drawSegments() {
+    $("cf-segments").innerHTML = cd.segments.map((s, i) => '<div class="cf-row segment"><label>區段名稱<input class="field" data-cf="sname" data-i="' + i + '" value="' + esc(s.name) + '" placeholder="例如：山海生活" aria-label="區段 ' + (i + 1) + ' 名稱"></label>' +
+      '<label>起始天數<input class="field" type="number" inputmode="numeric" min="1" max="365" data-cf="sstart" data-i="' + i + '" value="' + s.startDay + '" aria-label="區段 ' + (i + 1) + ' 起始天數"></label>' +
+      '<button type="button" class="cf-x" data-cf="sdel" data-i="' + i + '" aria-label="刪除區段 ' + (i + 1) + '"' + (cd.segments.length < 2 ? " disabled" : "") + '>×</button><p class="fine" data-segment-hint="' + i + '"></p></div>').join("");
+    $("cf-addsegment").disabled = cd.segments.length >= cd.days.length;
+  }
+  // Read structural fields again on an action: mobile keyboards need not emit change before submit.
+  function cfCaptureStructure() {
+    const n = Number($("cf-days").value);
+    if (!Number.isInteger(n) || n < 1 || n > 365) return cfErr("旅行天數須為 1 到 365 的整數。");
+    cd.start = $("cf-start").value;
+    while (cd.days.length < n) cd.days.push({ region: (cd.days[cd.days.length - 1] || {}).region || "", locations: dayLocations(cd.days[cd.days.length - 1] || {}).slice(-1), overnight: "", theme: "" });
+    cd.days.length = n;
+    $("cf-segments").querySelectorAll('[data-cf="sname"]').forEach((field) => { cd.segments[+field.dataset.i].name = field.value; });
+    $("cf-segments").querySelectorAll('[data-cf="sstart"]').forEach((field) => { cd.segments[+field.dataset.i].startDay = field.value.trim() ? Number(field.value) : NaN; });
+    $("cf-addsegment").disabled = cd.segments.length >= n;
+    return true;
+  }
   function cfSyncNames() {
-    document.querySelectorAll("#cf-daylist [data-cf=dreg] option").forEach((o) => { const r = cd.regions.find((x) => x.key === o.value); if (r) o.textContent = r.name || "（未命名）"; });
-    document.querySelectorAll("#cf-people [data-cf=pgrp] option").forEach((o) => { const g = cd.groups.find((x) => x.id === o.value); if (g) o.textContent = g.name || g.id; });
+    document.querySelectorAll("#cf-daylist select option").forEach((o) => { const r = cd.regions.find((x) => x.key === o.value); if (r) o.textContent = r.name || "（未命名）"; });
   }
   function drawCfg() {
     $("cf-regions").innerHTML = cd.regions.map((r, i) => '<div class="cf-row r"><input class="field" data-cf="rname" data-i="' + i + '" value="' + esc(r.name) + '" placeholder="地區名稱" aria-label="地區名稱"><span class="cf-tones">' +
       TONES.map((t, j) => '<button type="button" class="cf-tone" style="background:var(--r-' + (j + 1) + ')" data-cf="tone" data-i="' + i + '" data-v="' + (j + 1) + '" aria-pressed="' + (r.tone === j + 1) + '" aria-label="' + t + '色"></button>').join("") +
       '</span><button type="button" class="cf-x" data-cf="rdel" data-i="' + i + '" aria-label="刪除地區 ' + esc(r.name) + '"' + (cd.regions.length < 2 ? " disabled" : "") + ">×</button></div>").join("");
-    $("cf-daylist").innerHTML = cd.days.map(cfDayRow).join("");
-    cfDayHint();
-    $("cf-groups").innerHTML = cd.groups.map((g, i) => '<div class="cf-row g"><b>分組 ' + esc(g.id) + '</b><input class="field" data-cf="gname" data-i="' + i + '" value="' + esc(g.name) + '" placeholder="分組名稱" aria-label="分組 ' + esc(g.id) + ' 名稱">' +
-      '<button type="button" class="cf-x" data-cf="gdel" data-i="' + i + '" aria-label="刪除分組 ' + esc(g.name) + '"' + (cd.groups.length < 2 ? " disabled" : "") + ">×</button></div>").join("");
-    $("cf-people").innerHTML = cd.people.map((x, i) => '<div class="cf-row p"><input class="field" data-cf="pname" data-i="' + i + '" value="' + esc(x.name) + '" placeholder="名字" aria-label="旅伴名字">' +
-      '<select class="field cf-sel" data-cf="pgrp" data-i="' + i + '" aria-label="' + esc(x.name) + ' 的分組">' + cd.groups.map((g) => '<option value="' + esc(g.id) + '"' + (g.id === x.group ? " selected" : "") + ">" + esc(g.name || g.id) + "</option>").join("") + "</select>" +
-      '<label class="cf-me"><input type="radio" name="cf-owner" data-cf="owner" data-i="' + i + '"' + (x.key === cd.owner ? " checked" : "") + ">我</label>" +
-      '<button type="button" class="cf-x" data-cf="pdel" data-i="' + i + '" aria-label="刪除 ' + esc(x.name) + '"' + (cd.people.length < 2 ? " disabled" : "") + ">×</button></div>").join("");
+    drawSegments();
+    cfSyncDays();
   }
-  // Typing only updates the draft; names that other rows show (regions, groups) redraw when the field is left.
+  // Typing only updates the draft; shared labels update when the field is left.
   $("cfsheet").addEventListener("input", (e) => {
     const t = e.target, i = +t.dataset.i;
     if (!cd) return;
     if (t.dataset.cf === "rname") cd.regions[i].name = t.value;
     else if (t.dataset.cf === "theme") cd.days[i].theme = t.value;
-    else if (t.dataset.cf === "gname") cd.groups[i].name = t.value;
-    else if (t.dataset.cf === "pname") cd.people[i].name = t.value;
+    else if (t.dataset.cf === "sname") cd.segments[i].name = t.value;
+    else if (t.id === "cf-days") { const n = Number(t.value); $("cf-addsegment").disabled = !Number.isInteger(n) || n < 1 || n > 365 || cd.segments.length >= n; }
   });
   $("cfsheet").addEventListener("change", (e) => {
     const t = e.target, i = +t.dataset.i;
     if (!cd) return;
-    if (t.dataset.cf === "dreg") cd.days[i].region = t.value;
-    else if (t.dataset.cf === "pgrp") cd.people[i].group = t.value;
-    else if (t.dataset.cf === "owner") cd.owner = cd.people[i].key;
-    else if (t.dataset.cf === "rname" || t.dataset.cf === "gname") cfSyncNames();
+    if (t.dataset.cf === "location") { cd.days[i].locations[+t.dataset.j] = t.value; cd.days[i].region = cd.days[i].locations[0] || ""; }
+    else if (t.dataset.cf === "overnight") cd.days[i].overnight = t.value;
+    else if (t.dataset.cf === "rname") cfSyncNames();
+    else if (t.dataset.cf === "sstart") { cd.segments[i].startDay = t.value.trim() ? Number(t.value) : NaN; cfSyncDays(); }
+    else if (t.dataset.cf === "sname") cfSyncDays();
     else if (t.id === "cf-start") { cd.start = t.value; cfSyncDays(); }
     else if (t.id === "cf-days") {
       const n = Math.round(+t.value);
-      if (!(n >= 1 && n <= 60)) { t.value = cd.days.length; return; }
-      while (cd.days.length < n) cd.days.push({ region: (cd.days[cd.days.length - 1] || {}).region || "", theme: "" });
+      if (!(n >= 1 && n <= 365)) { t.value = cd.days.length; return; }
+      while (cd.days.length < n) cd.days.push({ region: (cd.days[cd.days.length - 1] || {}).region || "", locations: dayLocations(cd.days[cd.days.length - 1] || {}).slice(-1), overnight: "", theme: "" });
       cd.days.length = n;
+      $("cf-addsegment").disabled = cd.segments.length >= n;
       cfSyncDays();
+    }
+  });
+  $("cfsheet").addEventListener("focusout", (e) => {
+    if (cd && (e.target.id === "cf-days" || e.target.id === "cf-start" || e.target.dataset.cf === "sstart")) {
+      if (cfCaptureStructure()) cfSyncDays();
     }
   });
   $("cfsheet").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b || !cd) return;
     const i = +b.dataset.i, k = b.dataset.cf;
+    if (!cfCaptureStructure()) return;
+    if (k === "locadd" || k === "locdel" || k === "locup") {
+      const d = cd.days[i], j = +b.dataset.j;
+      if (k === "locadd") d.locations.push("");
+      if (k === "locdel") d.locations.splice(j, 1);
+      if (k === "locup" && j > 0) [d.locations[j - 1], d.locations[j]] = [d.locations[j], d.locations[j - 1]];
+      d.region = d.locations[0] || "";
+      b.closest(".cf-route").outerHTML = cfRouteFields(d, i); return;
+    }
     if (k === "tone") cd.regions[i].tone = +b.dataset.v;
-    else if (k === "rdel" && cd.regions.length > 1) { const gone = cd.regions.splice(i, 1)[0].key; cd.days.forEach((d) => { if (d.region === gone) d.region = ""; }); }
-    else if (k === "gdel" && cd.groups.length > 1) { const gone = cd.groups.splice(i, 1)[0].id; cd.people.forEach((x) => { if (x.group === gone) x.group = cd.groups[0].id; }); }
-    else if (k === "pdel" && cd.people.length > 1) { const gone = cd.people.splice(i, 1)[0].key; if (cd.owner === gone) cd.owner = cd.people[0].key; }
+    else if (k === "rdel" && cd.regions.length > 1) { const gone = cd.regions.splice(i, 1)[0].key; cd.days.forEach((d) => { d.locations = d.locations.filter((key) => key !== gone); d.region = d.locations[0] || ""; if (d.overnight === gone) d.overnight = ""; }); }
+    else if (k === "sdel" && cd.segments.length > 1) {
+      const removed = cd.segments.splice(i, 1)[0];
+      if (removed.startDay === 1) cd.segments.reduce((a, s) => s.startDay < a.startDay ? s : a).startDay = 1;
+      drawSegments(); cfSyncDays(); return;
+    }
     else if (b.id === "cf-addreg") cd.regions.push({ key: freshKey("r", cd.regions.map((r) => r.key)), name: "", tone: (cd.regions.length % 6) + 1 });
-    else if (b.id === "cf-addgrp") cd.groups.push({ id: "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").find((l) => !cd.groups.some((g) => g.id === l)) || freshKey("G", cd.groups.map((g) => g.id)), name: "" });
-    else if (b.id === "cf-addppl") cd.people.push({ key: freshKey("p", cd.people.map((x) => x.key)), name: "", group: cd.groups[cd.groups.length - 1].id });
+    else if (b.id === "cf-addsegment") {
+      const error = segmentProblem(cd.segments, cd.days.length);
+      if (error) return cfErr(error);
+      const available = segmentRanges(cd.segments, cd.days.length).filter((s) => s.endDay > s.startDay);
+      if (!available.length) return cfErr("每個區段至少需要一天。");
+      const last = available[available.length - 1];
+      cd.segments.push({ id: freshKey("section", cd.segments.map((s) => s.id)), name: "新區段", startDay: Math.floor((last.startDay + last.endDay + 1) / 2) });
+      cfErr(""); drawSegments(); cfSyncDays();
+      $("cf-segments").querySelectorAll('[data-cf="sname"]')[cd.segments.length - 1].focus(); return;
+    }
     else return;
     drawCfg();
     if (/^cf-add/.test(b.id)) { const list = b.previousElementSibling.querySelectorAll("input.field"); if (list.length) list[list.length - 1].focus(); }
@@ -2160,11 +2336,15 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   $("cfsheet").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!cd || !isOwner || !db) return;
+    if (!cfCaptureStructure()) return;
     const title = $("cf-name").value.trim(), start = $("cf-start").value, rate = Number($("cf-rate").value);
     if (!title) return cfErr("請填旅行名稱。");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return cfErr("請選出發日期。");
+    const segmentError = segmentProblem(cd.segments, cd.days.length);
+    if (segmentError) return cfErr(segmentError);
+    const estimateRates = {};
+    for (const cur of ["USD", "PHP"]) { const raw = $("cf-" + cur.toLowerCase()).value.trim(), value = Number(raw); if (raw && !(Number.isFinite(value) && value > 0)) return cfErr("估算匯率須大於 0，或留白。"); if (raw) estimateRates[cur] = value; }
     const people = cd.people.map((x) => ({ key: x.key, name: x.name.trim(), group: x.group }));
-    if (people.some((x) => !x.name)) return cfErr("每位旅伴都要有名字（不需要的請按 × 刪除）。");
     if (!(rate > 0)) return cfErr("匯率要是大於 0 的數字，例如 0.21。");
     const regions = Object.fromEntries(cd.regions.map((r) => [r.key, { name: r.name.trim() || "地區", tone: r.tone }]));
     // Empty groups are dropped, so the split table never shows a row with nobody in it.
@@ -2176,10 +2356,11 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     const overrides = JSON.stringify(oldPack.items || []) === JSON.stringify(packItems) ? oldPack.ownerOverrides || {} : {};
     const out = Object.assign({}, base, {
       version: 1, title, start, regions,
-      days: cd.days.map((d) => ({ region: regions[d.region] ? d.region : "", theme: d.theme.trim() })),
+      days: cd.days.map((d) => { const locations = d.locations.filter((key) => regions[key]); return { ...d, locations, region: locations[0] || "", overnight: regions[d.overnight] ? d.overnight : "", theme: d.theme.trim() }; }),
+      segments: cd.segments.map((s) => ({ id: s.id, name: s.name.trim(), startDay: s.startDay })).sort((a, b) => a.startDay - b.startDay),
       people: people.map(({ key, name }) => ({ key, name })), groups,
       owner: people.some((x) => x.key === cd.owner) ? cd.owner : people[0].key,
-      rate, twdLabel: $("cf-twd").value.trim(), costNote: $("cf-note").value.trim(),
+      rate, estimateRates, twdLabel: $("cf-twd").value.trim(), costNote: $("cf-note").value.trim(),
       pack: { items: packItems, ownerOverrides: overrides }
     });
     $("cf-save").disabled = true;
@@ -2191,6 +2372,14 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   $("cf-scrim").addEventListener("click", (e) => { if (e.target === $("cf-scrim")) closeCfg(); });
   $("cfgbtn").addEventListener("click", openCfg);
   $("cfg-start").addEventListener("click", openCfg);
+  $("segment-edit").addEventListener("click", () => { openCfg(); $("cf-segment-title").scrollIntoView({ block: "start" }); });
+  $("segment-picker").addEventListener("change", (e) => {
+    const segment = segmentRanges(cfg.segments, DAYS.length).find((s) => s.id === e.target.value);
+    if (!segment) return;
+    day = segment.startDay;
+    try { localStorage.setItem("trip-day", String(day)); } catch (err) {}
+    renderDays(); renderPlan();
+  });
 
   function render() {
     $("cfg-start").hidden = !(isOwner && db && cfgReady && !cfgStored);
@@ -2528,13 +2717,13 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       "，" + DAYS.length + " 天，" + PEOPLE.length + " 人｜" + (full ? "完整版" : "家人版") + "｜" + new Date().toLocaleDateString("zh-TW") + " 匯出</p>");
     h += blk("<h2>每日概要</h2>" + DAYS.map((d, i) => {
       const r = REGIONS[d.region] || { name: "", color: "var(--r-1)" };
-      return '<div class="pd-ov"><b>' + dayLabel(i + 1) + "</b><span>" + esc(d.theme) + '</span><span><i class="pd-dot" style="background:' + r.color + '"></i>' + esc(r.name) + "</span></div>";
+      return '<div class="pd-ov"><b>' + dayLabel(i + 1) + "</b><span>" + esc(d.theme) + '</span><span><i class="pd-dot" style="background:' + r.color + '"></i>' + esc(routeText(d, REGIONS)) + (d.overnight && REGIONS[d.overnight] ? "｜住宿：" + esc(REGIONS[d.overnight].name) : "") + "</span></div>";
     }).join(""));
     (cfg.tips || []).forEach((t) => { h += blk('<div class="box flight-tips' + (t.alert ? "" : " plain") + '"><summary><h3>' + esc(t.title || "") + "</h3></summary>" + (t.html || "") + "</div>"); });
     h += "</section>";
     DAYS.forEach((d, i) => {
       const n = i + 1, list = dayItems(n), r = REGIONS[d.region] || { name: "", color: "var(--r-1)" };
-      h += '<section class="pd-sec">' + blk('<div class="pd-dayh"><b>' + dayLabel(n) + "</b><span>" + esc(d.theme) + '</span><span><i class="pd-dot" style="background:' + r.color + '"></i>' + esc(r.name) + "</span></div>");
+      h += '<section class="pd-sec">' + blk('<div class="pd-dayh"><b>' + dayLabel(n) + "</b><span>" + esc(d.theme) + '</span><span><i class="pd-dot" style="background:' + r.color + '"></i>' + esc(routeText(d, REGIONS)) + (d.overnight && REGIONS[d.overnight] ? "｜住宿：" + esc(REGIONS[d.overnight].name) : "") + "</span></div>");
       list.forEach((it, j) => {
         const pair = j && PLAN_NAME[it.plan] && PLAN_NAME[list[j - 1].plan];
         const conn = !j ? "" : pair ? '<div class="pd-move">或</div>' : pdfMoveHtml(isAlt(list[j - 1]) && j > 1 ? list[j - 2] : list[j - 1], it);
@@ -2546,7 +2735,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     if (!full) return h;
     const priced = items.filter((it) => !isAlt(it) && (num(it.yen) || num(it.ntd)));
     const jpy = priced.reduce((s, it) => s + num(it.yen), 0), twd = priced.reduce((s, it) => s + num(it.ntd), 0);
-    h += '<section class="pd-sec">' + blk("<h2>花費</h2>") + blk('<div class="pd-kpi"><div><small>全團總計</small><b>' + ntd(jpy * RATE + twd) + "</b></div><div><small>每人平均</small><b>" + ntd((jpy * RATE + twd) / PAX) +
+    h += '<section class="pd-sec">' + blk("<h2>行程預算（不併入實際支出）</h2>") + blk('<div class="pd-kpi"><div><small>全團總計</small><b>' + ntd(jpy * RATE + twd) + "</b></div><div><small>每人平均</small><b>" + ntd((jpy * RATE + twd) / PAX) +
       "</b></div><div><small>日幣部分</small><b>" + yen(jpy) + "</b></div><div><small>" + esc(cfg.twdLabel || "台幣部分") + "</small><b>" + ntd(twd) + "</b></div></div>") +
       blk('<div class="box"><h3>依天數</h3><div class="list">' + DAYS.map((d, i) => '<div class="li"><span>' + dayLabel(i + 1) + " " + esc(d.theme) + "</span><span>" + ntd(priced.filter((it) => it.day === i + 1).reduce((a, it) => a + twdOf(it), 0)) + "</span></div>").join("") + "</div></div>") +
       (pcfg.cashHtml ? blk('<div class="box">' + pcfg.cashHtml.replace(/^<div class="box">|<\/div>$/g, "") + "</div>") : "") + "</section>";
@@ -2565,11 +2754,12 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       }).join("") + "</div>");
     });
     h += "</section>";
-    const ml = misc.slice().sort((a, b) => splitDate({ label: a.day }) - splitDate({ label: b.day }) || (a.order ?? 0) - (b.order ?? 0));
-    h += '<section class="pd-sec">' + blk("<h2>零星花費</h2>") + (ml.length ? ml.map((m) => {
-      const v = cellNum(m.amt), sub = [m.day ? splitHead(splitDate({ label: m.day })) : "整趟", m.pay, m.hint ? "預估 " + m.hint : "", m.note].filter(Boolean).join("｜");
-      return blk('<div class="li"><span><b>' + esc(m.label || "（未命名）") + '</b><br><small class="pd-sub">' + esc(sub) + "</small></span><span>" + (v === null ? "未填" : fmtCur(m.cur === "TWD" ? "TWD" : "JPY", v)) + "</span></div>");
-    }).join("") : blk('<p class="pd-sub">沒有零星花費。</p>'));
+    h += blk("<h2>實際支出（換匯不計入）</h2><p>" + esc(summaryText(misc)) + "</p>");
+    const ml = misc.slice().sort((a, b) => miscDayNumber(a) - miscDayNumber(b) || (a.order ?? 0) - (b.order ?? 0));
+    h += '<section class="pd-sec">' + blk("<h2>花費與換匯明細</h2>") + (ml.length ? ml.map((m) => {
+      const v = cellNum(m.amt), sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.pay, m.hint ? "預估 " + m.hint : "", m.note].filter(Boolean).join("｜");
+      return blk('<div class="li"><span><b>' + esc(m.label || "（未命名）") + '</b><br><small class="pd-sub">' + esc(sub) + "</small></span><span>" + esc(miscValueText(m)) + "</span></div>");
+    }).join("") : blk('<p class="pd-sub">沒有花費或換匯紀錄。</p>'));
     // 資訊 starts a page; each of its boxes is its own block so a page break falls between them.
     const tmp = document.createElement("div");
     tmp.innerHTML = pcfg.infoHtml || "";
