@@ -300,10 +300,10 @@ index 0000000..924b246
 +export const shares=sqliteTable('journal_shares',{id:text('id').primaryKey(),owner:text('owner').notNull(),hash:text('token_hash').notNull(),created:text('created').notNull(),expires:text('expires').notNull(),revoked:integer('revoked').notNull().default(0),notes:integer('notes').notNull().default(0)},t=>[uniqueIndex('journal_share_hash').on(t.hash)]);
 diff --git a/docs/cloud-release.md b/docs/cloud-release.md
 new file mode 100644
-index 0000000..a9e8090
+index 0000000..6cd6bb8
 --- /dev/null
 +++ b/docs/cloud-release.md
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,41 @@
 +# Cloud trial release — 2026-10-31
 +
 +The existing journal UI now uses Sites-managed D1/R2 and ChatGPT sign-in. No Supabase account is required. The original GitHub Pages offline app and GitHub main branch are unchanged.
@@ -336,13 +336,15 @@ index 0000000..a9e8090
 +
 +## Validation evidence
 +
-+- 13 cloud tests using real SQLite plus the production sync algorithm: ownership and Origin checks, revisions/tombstones, retries, pagination, independent-device convergence, same-document conflicts, in-flight edits, offline retry, login expiry, public-field privacy, share revocation/expiry, private immutable assets and stale editor submission.
++- 15 cloud tests using real SQLite plus the production sync algorithm: ownership and Origin checks, revisions/tombstones, retries, pagination, independent-device convergence, same-document conflicts, in-flight edits, offline retry, login expiry, public-field privacy, share revocation/expiry, private immutable assets and stale editor submission, clean production URL offline caching, and waiting for in-flight sync.
 +- 28 existing route, segment, currency and wallet checks run against the cloud HTML.
 +- Local browser: two independent origins/IndexedDB stores signed in as the same preview owner. Imported synthetic itinerary/finance/private-note/photo fixture, pulled onto the second origin, edited one item concurrently, resolved the conflict and observed both views converge. A private photo loaded on the second origin. Sharing was read-only; revocation removed access. Imported unsafe HTML was removed.
 +- Full backup generation produced a downloadable Blob. This browser-control connection cannot retrieve Blob downloads, so a physical-device file-save/restore round trip remains a user trial check. Likewise the desktop viewport override did not actually change the viewport; no claim of physical phone/tablet or airplane-mode testing is made.
 +- Build and migration results are recorded in the publication evidence outside the source tree.
 +
 +Apple Journal import remains a separate planned feature and is not represented as shipped by this cloud release.
++
++Production smoke check: native Sites publication succeeded; the existing ChatGPT owner signed in and the real site reached synced status. The platform canonicalizes /trip.html to /trip; the service worker now maps that clean URL and / to the cached shell. Direct automated HTTP probes were blocked by the edge (1010), so their 403 responses are not asserted as application authorization evidence.
 diff --git a/drizzle/0000_mute_microchip.sql b/drizzle/0000_mute_microchip.sql
 new file mode 100644
 index 0000000..4e9c280
@@ -816,7 +818,7 @@ index 0000000..dce7c02
 +}
 diff --git a/public/cloud.js b/public/cloud.js
 new file mode 100644
-index 0000000..0f21f30
+index 0000000..a1f3f8a
 --- /dev/null
 +++ b/public/cloud.js
 @@ -0,0 +1,65 @@
@@ -852,7 +854,7 @@ index 0000000..0f21f30
 +  const api={session:async()=>{const r=await(await call('session')).json();if(r.userId!==identity.userId){const e=new Error('登入身分已變更，請重新開啟。');e.status=401;throw e;}},push:async op=>(await call('push',{method:'POST',body:JSON.stringify(op)})).json(),document:async p=>(await call('document?path='+encodeURIComponent(p))).json(),changes:async after=>(await call('changes?after='+after)).json(),assets:async()=>(await(await call('assets')).json()).assets,assetUpload:async(id,b)=>call('assets/'+id,{method:b?'PUT':'DELETE',...(b?{body:b,headers:{'Content-Type':b.type||'application/octet-stream'}}:{})}),assetDownload:async a=>{const b=await(await call('assets/'+a.id)).blob(),digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await b.arrayBuffer())),x=>x.toString(16).padStart(2,'0')).join('');if(digest!==a.sha)throw new Error('照片校驗失敗，請稍後再同步。');return new Blob([b],{type:a.mime});}};
 +  let identity;
 +  function status(s){lastStatus=s;const text=s.phase==='synced'?'已同步・'+new Date(s.at).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'}):s.phase==='syncing'?'同步中…':s.phase==='conflict'?'有 '+s.conflicts+' 筆衝突待處理':s.phase==='locked'?'需要重新登入':(s.phase==='offline'?'離線・':'已存裝置・')+'待同步 '+s.pending+' 筆';document.getElementById('cloud-state').textContent=text;document.getElementById('cloud-message').textContent=s.message||'';document.getElementById('cloud-conflicts').hidden=!s.conflicts;document.getElementById('cloud-conflicts').textContent='處理衝突 '+s.conflicts+' 筆';if(s.phase==='locked')lock(s.message);}
-+  async function sync(){if(!engine||document.querySelector('.scrim:not([hidden])'))return;if(navigator.locks)await navigator.locks.request('trip-sync-'+repo.name,{ifAvailable:true},async lock=>{if(lock)await engine.sync();});else await engine.sync();}
++  async function sync(){if(!engine||document.querySelector('.scrim:not([hidden])'))return;if(engine.flight)return engine.flight;if(navigator.locks)await navigator.locks.request('trip-sync-'+repo.name,{ifAvailable:true},async lock=>{if(lock)await engine.sync();});else await engine.sync();}
 +  function lock(message){controller.abort();localStorage.removeItem('journal-offline-user');document.getElementById('cloud-cover').hidden=false;document.getElementById('cloud-cover').innerHTML='<h2>私人旅行日誌</h2><p>'+esc(message||'請先用 ChatGPT 登入，再開啟你的旅行資料。')+'</p><a class="btn" href="/signin-with-chatgpt?return_to=%2Ftrip.html" target="_top">使用 ChatGPT 登入</a><p>原本的裝置資料保留，登入後可繼續同步。</p>';}
 +  function sheet(title,html){const box=document.getElementById('cloud-dialog');box.innerHTML='<div class="sheet"><h2>'+esc(title)+'</h2>'+html+'<button class="btn ghost" id="cloud-close" type="button">關閉</button></div>';box.hidden=false;document.getElementById('cloud-close').onclick=()=>box.hidden=true;}
 +  async function conflicts(){const rows=await repo.all('conflicts');sheet('同一筆資料有兩個版本',rows.map(([p,c],i)=>'<section class="box"><h3>'+esc(p)+'</h3><p>兩份版本都會保留在完整備份紀錄中。</p><details><summary>此裝置版本</summary><pre>'+esc(JSON.stringify(c.local,null,2))+'</pre></details><details><summary>雲端版本</summary><pre>'+esc(JSON.stringify(c.remote.value,null,2))+'</pre></details><button class="btn" data-resolve="'+i+'" data-choice="local">保留此裝置版本</button><button class="btn ghost" data-resolve="'+i+'" data-choice="remote">改用雲端版本</button></section>').join('')||'<p>目前沒有衝突。</p>');for(const b of document.querySelectorAll('[data-resolve]'))b.onclick=async()=>{await repo.resolve(rows[+b.dataset.resolve][0],b.dataset.choice);await changed(rows[+b.dataset.resolve][0]);broadcast(rows[+b.dataset.resolve][0]);await conflicts();schedule();};}
@@ -909,22 +911,22 @@ index 0000000..126f9da
 +})();
 diff --git a/public/sw.js b/public/sw.js
 new file mode 100644
-index 0000000..2d5bd30
+index 0000000..33a8476
 --- /dev/null
 +++ b/public/sw.js
 @@ -0,0 +1,6 @@
-+const VERSION='journal-sites-shell-v1';
++const VERSION='journal-sites-shell-v2';
 +const SHELL=['/trip.html','/cloud.js','/sync-core.js','/manifest.webmanifest','/icon-192.png','/icon-512.png','/vendor/leaflet.js','/vendor/html2canvas.min.js','/vendor/jspdf.umd.min.js'];
 +self.addEventListener('install',e=>e.waitUntil(caches.open(VERSION).then(c=>Promise.all(SHELL.map(p=>c.add(p))))));
 +self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('journal-sites-shell-')&&k!==VERSION).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
-+self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.origin!==location.origin||!SHELL.includes(u.pathname))return;
-+e.respondWith(fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();e.waitUntil(caches.open(VERSION).then(c=>c.put(e.request,copy)));}return r;}).catch(()=>caches.match(e.request).then(r=>r||Response.error())));});
++self.addEventListener('fetch',e=>{const u=new URL(e.request.url),path=(u.pathname==='/'||u.pathname==='/trip')?'/trip.html':u.pathname;if(e.request.method!=='GET'||u.origin!==location.origin||!SHELL.includes(path))return;
++e.respondWith(fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();e.waitUntil(caches.open(VERSION).then(c=>c.put(path,copy)));}return r;}).catch(()=>caches.match(path).then(r=>r||Response.error())));});
 diff --git a/public/sync-core.js b/public/sync-core.js
 new file mode 100644
-index 0000000..7a7da24
+index 0000000..4137114
 --- /dev/null
 +++ b/public/sync-core.js
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,27 @@
 +export class CloudStore {
 +  constructor(name){this.name=name;this.db=new Promise((resolve,reject)=>{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>{for(const s of ['docs','revisions','queue','conflicts','history','meta','assets','assetJobs'])r.result.createObjectStore(s);};r.onsuccess=()=>{r.result.onversionchange=()=>r.result.close();resolve(r.result);};r.onerror=()=>reject(r.error);r.onblocked=()=>reject(new Error('請先關閉這個網站的其他分頁再開啟。'));});}
 +  async tx(stores,mode,fn){const db=await this.db;return new Promise((resolve,reject)=>{const t=db.transaction(stores,mode);let value;const get=(s,k,cb)=>{const r=t.objectStore(s).get(k);r.onsuccess=()=>cb(r.result);};try{fn(t,get,v=>{value=v;});}catch(e){t.abort();reject(e);return;}t.oncomplete=()=>resolve(value);t.onerror=t.onabort=()=>reject(t.error||new Error('裝置儲存失敗。'));});}
@@ -942,7 +944,8 @@ index 0000000..7a7da24
 +export class SyncEngine {
 +  constructor(store,api,{changed=()=>{},status=()=>{}}={}){this.store=store;this.api=api;this.changed=changed;this.status=status;this.busy=false;}
 +  async counts(){return {pending:(await this.store.all('queue')).length+(await this.store.all('assetJobs')).length,conflicts:(await this.store.all('conflicts')).length};}
-+  async sync(){if(this.busy)return;this.busy=true;this.status({phase:'syncing',...await this.counts()});try{
++  sync(){if(!this.flight)this.flight=this.run().finally(()=>{this.flight=null;});return this.flight;}
++  async run(){if(this.busy)return;this.busy=true;this.status({phase:'syncing',...await this.counts()});try{
 +    await this.api.session();
 +    for(const [id,job] of await this.store.all('assetJobs')){const blob=await this.store.get('assets',id);await this.api.assetUpload(id,job.deleted?null:blob);await this.store.tx(['assetJobs','assets'],'readwrite',(t,g)=>g('assets',id,current=>{if((job.deleted&&!current)||(!job.deleted&&current?.size===blob?.size&&current?.type===blob?.type))t.objectStore('assetJobs').delete(id);}));}
 +    for(const [,op] of await this.store.all('queue')){if(await this.store.get('conflicts',op.path))continue;const ack=await this.api.push(op);if(ack.ok)await this.store.ack(op,ack.revision);else await this.store.conflict(op.path,await this.api.document(op.path));}

@@ -30,10 +30,12 @@ The site shell must be publicly reachable for anonymous friend links. All owner 
 
 ## Validation evidence
 
-- 13 cloud tests using real SQLite plus the production sync algorithm: ownership and Origin checks, revisions/tombstones, retries, pagination, independent-device convergence, same-document conflicts, in-flight edits, offline retry, login expiry, public-field privacy, share revocation/expiry, private immutable assets and stale editor submission.
+- 15 cloud tests using real SQLite plus the production sync algorithm: ownership and Origin checks, revisions/tombstones, retries, pagination, independent-device convergence, same-document conflicts, in-flight edits, offline retry, login expiry, public-field privacy, share revocation/expiry, private immutable assets and stale editor submission, clean production URL offline caching, and waiting for in-flight sync.
 - 28 existing route, segment, currency and wallet checks run against the cloud HTML.
 - Local browser: two independent origins/IndexedDB stores signed in as the same preview owner. Imported synthetic itinerary/finance/private-note/photo fixture, pulled onto the second origin, edited one item concurrently, resolved the conflict and observed both views converge. A private photo loaded on the second origin. Sharing was read-only; revocation removed access. Imported unsafe HTML was removed.
 - Full backup generation produced a downloadable Blob. This browser-control connection cannot retrieve Blob downloads, so a physical-device file-save/restore round trip remains a user trial check. Likewise the desktop viewport override did not actually change the viewport; no claim of physical phone/tablet or airplane-mode testing is made.
 - Build and migration results are recorded in the publication evidence outside the source tree.
 
 Apple Journal import remains a separate planned feature and is not represented as shipped by this cloud release.
+
+Production smoke check: native Sites publication succeeded; the existing ChatGPT owner signed in and the real site reached synced status. The platform canonicalizes /trip.html to /trip; the service worker now maps that clean URL and / to the cached shell. Direct automated HTTP probes were blocked by the edge (1010), so their 403 responses are not asserted as application authorization evidence.

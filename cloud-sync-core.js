@@ -15,7 +15,8 @@ export class CloudStore {
 export class SyncEngine {
   constructor(store,api,{changed=()=>{},status=()=>{}}={}){this.store=store;this.api=api;this.changed=changed;this.status=status;this.busy=false;}
   async counts(){return {pending:(await this.store.all('queue')).length+(await this.store.all('assetJobs')).length,conflicts:(await this.store.all('conflicts')).length};}
-  async sync(){if(this.busy)return;this.busy=true;this.status({phase:'syncing',...await this.counts()});try{
+  sync(){if(!this.flight)this.flight=this.run().finally(()=>{this.flight=null;});return this.flight;}
+  async run(){if(this.busy)return;this.busy=true;this.status({phase:'syncing',...await this.counts()});try{
     await this.api.session();
     for(const [id,job] of await this.store.all('assetJobs')){const blob=await this.store.get('assets',id);await this.api.assetUpload(id,job.deleted?null:blob);await this.store.tx(['assetJobs','assets'],'readwrite',(t,g)=>g('assets',id,current=>{if((job.deleted&&!current)||(!job.deleted&&current?.size===blob?.size&&current?.type===blob?.type))t.objectStore('assetJobs').delete(id);}));}
     for(const [,op] of await this.store.all('queue')){if(await this.store.get('conflicts',op.path))continue;const ack=await this.api.push(op);if(ack.ok)await this.store.ack(op,ack.revision);else await this.store.conflict(op.path,await this.api.document(op.path));}
