@@ -31,6 +31,7 @@
   --c-stay: #bcb4cf;
   --c-activity: #d5c592;
   --c-shop: #caaab0;
+  --c-learning: #a9c9c6; --c-other: #bdc0b8;
   --map-sea: #121c19;
   --map-land: #22302a;
   --map-lake: #17262a;
@@ -49,7 +50,7 @@
     --bg: #eeebe2; --surface: #e2ddd0; --surface-2: #d6d0c0; --fg: #1d2622; --muted: #5f6a64;
     --line: #cbc4b2; --card: #ffffff; --card-fg: #1d2622; --cream: #1d2622; --accent: #c8642c; --gold: #b38a1f;
     --r-1: #3f8b72; --r-2: #3f6bb0; --r-3: #c8642c; --r-4: #a07a12; --r-5: #8a4fb0; --r-6: #b04f6e; --done: #8b968f;
-    --c-transport: #e0e8ef; --c-food: #f5e4d5; --c-sight: #dcebe0; --c-stay: #e7e1f1; --c-activity: #f3eaca; --c-shop: #f2e0e3;
+    --c-transport: #e0e8ef; --c-food: #f5e4d5; --c-sight: #dcebe0; --c-stay: #e7e1f1; --c-activity: #f3eaca; --c-shop: #f2e0e3; --c-learning: #d5ece9; --c-other: #e6e7e1;
     --map-sea: #c9d9d6; --map-land: #f4f0e6; --map-lake: #bcd2d3; --map-road: #d9cfba; --map-road-minor: #e6dfcf; --map-label: #66706b; --map-water-label: #5b7c7a; --map-route: #c8642c; --map-rail: #3f6bb0;
     color-scheme: light;
   }
@@ -58,7 +59,7 @@
   --bg: #eeebe2; --surface: #e2ddd0; --surface-2: #d6d0c0; --fg: #1d2622; --muted: #5f6a64;
   --line: #cbc4b2; --card: #ffffff; --card-fg: #1d2622; --cream: #1d2622; --accent: #c8642c; --gold: #b38a1f;
   --r-1: #3f8b72; --r-2: #3f6bb0; --r-3: #c8642c; --r-4: #a07a12; --r-5: #8a4fb0; --r-6: #b04f6e; --done: #8b968f;
-  --c-transport: #e0e8ef; --c-food: #f5e4d5; --c-sight: #dcebe0; --c-stay: #e7e1f1; --c-activity: #f3eaca; --c-shop: #f2e0e3;
+  --c-transport: #e0e8ef; --c-food: #f5e4d5; --c-sight: #dcebe0; --c-stay: #e7e1f1; --c-activity: #f3eaca; --c-shop: #f2e0e3; --c-learning: #d5ece9; --c-other: #e6e7e1;
   --map-sea: #c9d9d6; --map-land: #f4f0e6; --map-lake: #bcd2d3; --map-road: #d9cfba; --map-road-minor: #e6dfcf; --map-label: #66706b; --map-water-label: #5b7c7a; --map-route: #c8642c; --map-rail: #3f6bb0;
   color-scheme: light;
 }
@@ -67,6 +68,12 @@ html, body { background: var(--bg); color: var(--fg); overflow-x: hidden; overfl
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .kpi { min-width: 0; }
 .kpi b { overflow-wrap: anywhere; }
+.wallet-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.wallet-card { padding:12px; border:1px solid var(--line); border-radius:12px; min-width:0; }
+.wallet-card b,.wallet-card small { display:block; overflow-wrap:anywhere; }
+.wallet-card small { color:var(--muted); font-size:11px; margin-top:5px; }
+.checkline { display:flex; align-items:flex-start; gap:8px; font-size:13px; }
+.checkline input { width:auto; flex:none; margin-top:5px; }
 .info { margin: 4px 0 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, .32); font-size: 13.5px; line-height: 1.45; }
 .info dt { opacity: .6; white-space: nowrap; }
 .info dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -207,6 +214,8 @@ a { color: inherit; }
 .card[data-cat="stay"] { --card: var(--c-stay); }
 .card[data-cat="activity"] { --card: var(--c-activity); }
 .card[data-cat="shop"] { --card: var(--c-shop); }
+.card[data-cat="learning"] { --card: var(--c-learning); }
+.card[data-cat="other"] { --card: var(--c-other); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; }
@@ -276,7 +285,9 @@ details.cat { border-top: 1px solid var(--line); }
 details.cat:first-child { border-top: 0; }
 details.cat summary { list-style: none; cursor: pointer; padding: 10px 0; }
 details.cat summary::-webkit-details-marker { display: none; }
-details.cat summary .bar { grid-template-columns: 14px 56px minmax(0,1fr) 96px; }
+details.cat summary .bar { grid-template-columns: 14px minmax(0,1fr); }
+details.cat summary .track { display:none; }
+details.cat summary .v { grid-column:2; text-align:left; overflow-wrap:anywhere; }
 details.cat summary .chev { transition: transform .15s; color: var(--muted); font-size: 12px; }
 details.cat[open] summary .chev { transform: rotate(90deg); }
 .sub { display: flex; flex-direction: column; padding: 0 0 10px 24px; }
@@ -557,7 +568,9 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   .todo input { width: 22px; height: 22px; }
   .li { font-size: 15px; }
   .bar { grid-template-columns: 52px minmax(0,1fr) 88px; font-size: 15px; }
-  details.cat summary .bar { grid-template-columns: 12px 48px minmax(0,1fr) 88px; }
+  details.cat summary .bar { grid-template-columns: 12px minmax(0,1fr); }
+  details.cat summary .track { display:none; }
+  details.cat summary .v { grid-column:2; text-align:left; font-size:13px; overflow-wrap:anywhere; }
   .sub div { font-size: 14px; }
   .sheet .grid2 { grid-template-columns: minmax(0,1fr); }
   .field { font-size: 16px; }
@@ -600,6 +613,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       <span><i style="background:var(--c-stay)"></i>住宿</span>
       <span><i style="background:var(--c-activity)"></i>體驗</span>
       <span><i style="background:var(--c-shop)"></i>採買</span>
+      <span><i style="background:var(--c-learning)"></i>學習</span><span><i style="background:var(--c-other)"></i>其他</span>
     </div>
     <div class="timeline" id="timeline"></div>
     <button class="addrow" id="addrow" type="button">＋ 加入行程</button>
@@ -617,17 +631,12 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       <button class="addrow" id="split-add" type="button" hidden>＋ 新增分攤項目</button>
     </details>
     <div class="box" id="misc-box" hidden>
-      <h3>實際花費與換匯</h3><p class="fine">花費保留原幣，另依設定匯率估算台幣。換匯只記錄金流，不列入支出；手續費可另記一筆花費。</p><div id="actual-summary" class="fine"></div>
+      <h3>實際花費與換匯</h3><p class="fine">花費保留原幣，另依設定匯率估算台幣。換匯與現金增減只記金流，不列入支出；手續費可另記一筆花費。</p><div id="actual-summary" class="fine"></div>
       <div class="misc" id="misc"></div>
-      <button class="addrow" id="misc-add" type="button">＋ 新增花費／換匯</button>
+      <button class="addrow" id="misc-add" type="button">＋ 新增花費／金流</button>
     </div>
     <div id="cash-box"></div>
-    <details class="box"><summary>行程預算（與實際支出分開）</summary><div class="kpis">
-      <div class="kpi"><small>行程預算（換算台幣）</small><b id="k-total">NT$0</b></div>
-      <div class="kpi"><small>每人平均</small><b id="k-per">NT$0</b></div>
-      <div class="kpi"><small>日幣部分</small><b id="k-jpy">¥0</b></div>
-      <div class="kpi"><small id="k-twd-label">台幣部分</small><b id="k-twd">NT$0</b></div>
-    </div>
+    <details class="box"><summary>行程預算（與實際支出分開）</summary><p class="fine" id="budget-total"></p><div class="kpis" id="budget-currencies"></div>
     <div class="box"><h3>依類別｜點開看細項</h3><div id="by-cat"></div></div>
     </details><div class="box"><h3>每日實際花費總計</h3><div id="by-day" class="list"></div></div>
     <p class="fine" id="cost-note"></p>
@@ -707,11 +716,9 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     <label>移動說明（顯示在連接線上）<input class="field" id="f-move" placeholder="例如：開車約 25 分"></label>
     <label>名稱<input class="field" id="f-title" required placeholder="例如：午餐"></label>
     <label>備註<textarea class="field" id="f-note" rows="2" placeholder="預約、付款方式、提醒"></textarea></label>
-    <div class="grid2">
-      <label>類別<select class="field" id="f-cat"></select></label>
-      <label>全團金額（日幣）<input class="field" id="f-yen" type="number" min="0" step="1" inputmode="numeric" placeholder="不填則不計"></label>
-    </div>
-    <label>全團金額（台幣，台灣先付的部分）<input class="field" id="f-ntd" type="number" min="0" step="1" inputmode="numeric" placeholder="不填則不計"></label>
+    <label>類別<select class="field" id="f-cat"></select></label>
+    <div class="grid2"><label>金額（行程預算）<input class="field" id="f-budget" inputmode="decimal" placeholder="不填則不計"></label><label>幣別<select class="field" id="f-cur"><option value="PHP">披索 PHP</option><option value="TWD">台幣 TWD</option><option value="USD">美金 USD</option><option value="VND">越南盾 VND</option><option value="JPY" id="f-legacy-jpy" hidden>舊日幣 JPY</option></select></label></div>
+    <div id="f-retained" class="fine" hidden></div><p class="fine">此處只記預算，不計入實際支出或扣除現金。越南盾及日幣請填整數。</p>
     <label>連結<input class="field" id="f-url" type="url" placeholder="https://"></label>
     <p class="err" id="f-err" hidden></p>
     <div class="actions">
@@ -760,7 +767,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     <p class="fine" id="cf-dayhint"></p>
     <h3 class="cf-h">花費</h3>
     <details><summary>舊行程預算設定</summary><div class="grid2"><label>日幣→台幣匯率<input class="field" id="cf-rate" inputmode="decimal" autocomplete="off" placeholder="例如：0.21"></label><label>台幣總計的名稱<input class="field" id="cf-twd" autocomplete="off" placeholder="例如：台幣部分（機票）"></label></div></details>
-    <div class="grid2"><label>1 美元估算台幣<input class="field" id="cf-usd" inputmode="decimal" placeholder="自行填入匯率"></label><label>1 披索估算台幣<input class="field" id="cf-php" inputmode="decimal" placeholder="自行填入匯率"></label></div><p class="fine">手動估算，非即時牌告匯率；未填的幣別會標示未換算。刷卡可另填實際台幣帳單金額。</p>
+    <div class="grid2"><label>1 美元估算台幣<input class="field" id="cf-usd" inputmode="decimal" placeholder="自行填入匯率"></label><label>1 披索估算台幣<input class="field" id="cf-php" inputmode="decimal" placeholder="自行填入匯率"></label></div><label>1 越南盾估算台幣<input class="field" id="cf-vnd" inputmode="decimal" placeholder="自行填入匯率"></label><p class="fine">手動估算，非即時牌告匯率；未填的幣別會標示未換算。刷卡可另填實際台幣帳單金額。</p>
     <label>花費說明補充<input class="field" id="cf-note" autocomplete="off" placeholder="例如：不含個人購物。"></label>
     <h3 class="cf-h">預設攜帶清單</h3>
     <label>一行一項，第一次開啟時會放進你的清單<textarea class="field" id="cf-pack" rows="6"></textarea></label>
@@ -791,15 +798,17 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
 </div>
 <div class="scrim" id="ms-scrim" hidden>
   <form class="sheet" id="msheet" role="dialog" aria-modal="true" aria-labelledby="ms-title">
-    <h2 id="ms-title">新增花費／換匯</h2>
-    <label>紀錄類型<select class="field" id="ms-kind"><option value="expense">花費</option><option value="exchange">換匯（不列支出）</option></select></label>
+    <h2 id="ms-title">新增花費／金流</h2>
+    <label>紀錄類型<select class="field" id="ms-kind"><option value="expense">花費</option><option value="exchange">換匯（不列支出）</option><option value="cashflow">現金增減（不列支出）</option></select></label>
     <label>名稱<input class="field" id="ms-label" placeholder="例如：午餐／換匯" autocomplete="off"></label>
     <label>日期<select class="field" id="ms-day"></select></label>
-    <div class="seg" id="ms-cur" role="group" aria-label="幣別"><button type="button" data-cur="USD">US$ 美金</button><button type="button" data-cur="PHP">₱ 披索</button><button type="button" data-cur="TWD">NT$ 台幣</button><button type="button" data-cur="JPY" id="ms-legacy-jpy" hidden>¥ 舊日幣</button></div>
+    <div class="seg" id="ms-cur" role="group" aria-label="幣別"><button type="button" data-cur="USD">US$ 美金</button><button type="button" data-cur="PHP">₱ 披索</button><button type="button" data-cur="TWD">NT$ 台幣</button><button type="button" data-cur="VND">₫ 越南盾</button><button type="button" data-cur="JPY" id="ms-legacy-jpy" hidden>¥ 舊日幣</button></div>
     <label>金額（換匯時填付出金額）<input class="field ss-in" id="ms-amt" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="還沒花可先空著"></label>
-    <div class="seg" id="ms-pay" role="group" aria-label="付款方式"><button type="button" data-pay="現金">現金</button><button type="button" data-pay="刷卡">刷卡</button></div>
-    <div id="ms-exchange" hidden><label>收到幣別<select class="field" id="ms-to-cur"><option value="PHP">披索 PHP</option><option value="USD">美金 USD</option><option value="TWD">台幣 TWD</option></select></label><label>收到金額<input class="field" id="ms-to-amt" inputmode="decimal"></label><p class="fine" id="ms-rate" role="status"></p></div>
+    <div class="seg" id="ms-pay" role="group" aria-label="付款方式"><button type="button" data-pay="現金">現金</button><button type="button" data-pay="刷卡">刷卡</button><button type="button" data-pay="待確認">待確認</button></div>
+    <label id="ms-direction-wrap" hidden>現金方向<select class="field" id="ms-direction"><option value="in">增加（領現／補入）</option><option value="out">減少（存回／移出）</option></select></label>
+    <div id="ms-exchange" hidden><label>收到幣別<select class="field" id="ms-to-cur"><option value="PHP">披索 PHP</option><option value="USD">美金 USD</option><option value="TWD">台幣 TWD</option><option value="VND">越南盾 VND</option><option value="JPY" id="ms-to-legacy-jpy" hidden>舊日幣 JPY</option></select></label><label>收到金額<input class="field" id="ms-to-amt" inputmode="decimal"></label><p class="fine" id="ms-rate" role="status"></p></div>
     <label id="ms-actual-wrap">實際台幣帳單金額（選填，取代估算）<input class="field" id="ms-actual" inputmode="decimal"></label>
+    <label class="checkline"><input type="checkbox" id="ms-cash-included">補登舊帳：這筆金流已包含在目前的現金盤點</label>
     <label>預估<input class="field" id="ms-hint" placeholder="例如：PHP 500" autocomplete="off"></label>
     <label>備註<input class="field" id="ms-note" autocomplete="off"></label>
     <p class="err" id="ms-err" role="alert" hidden></p>
@@ -811,6 +820,13 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   </form>
 </div>
 
+<div class="scrim" id="wallet-scrim" hidden>
+  <form class="sheet" id="wallet-sheet" role="dialog" aria-modal="true" aria-labelledby="wallet-title">
+    <h2 id="wallet-title">盤點身上現金</h2><p class="fine">填現在實際點算的金額。留白的幣別不變，填 0 代表沒有現金。儲存後，已存在的紀錄都視為已包含在本次盤點；只計算之後新增的金流。</p>
+    <div id="wallet-inputs"></div><p class="err" id="wallet-err" hidden role="alert"></p>
+    <div class="actions"><button type="button" class="btn ghost" id="wallet-cancel">取消</button><button type="submit" class="btn" id="wallet-save">儲存盤點</button></div>
+  </form>
+</div>
 <div class="scrim" id="nt-scrim" hidden>
   <form class="sheet" id="ntsheet" role="dialog" aria-modal="true" aria-labelledby="nt-title">
     <h2 id="nt-title">新增筆記</h2>
@@ -1012,9 +1028,9 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       '<details class="box flight-tips' + (t.alert ? "" : " plain") + '"><summary><h3>' + esc(t.title || "") + '</h3><span class="chev">▶</span></summary>' + (t.html || "") + "</details>").join("");
     $("info-title").textContent = pcfg.infoTitle || "資訊";
     $("info-body").innerHTML = cfgReady ? pcfg.infoHtml || '<p class="fine">還沒有資訊。</p>' : "";
-    $("cash-box").innerHTML = cfgReady && pcfg.cashHtml ? '<div class="box">' + pcfg.cashHtml.replace(/^<div class="box">|<\/div>$/g, "") + "</div>" : "";
-    $("k-twd-label").textContent = cfg.twdLabel || "台幣部分";
-    $("cost-note").textContent = "實際支出只計花費紀錄；換匯不列支出。台幣為手動匯率估算，已填台幣帳單者以帳單金額計。" + (cfg.costNote || "");
+    /* Legacy cash notes keep their original currency. */
+    renderWallet();
+    $("cost-note").textContent = "實際支出只計花費紀錄；換匯、現金增減不列支出。台幣為手動匯率估算，已填台幣帳單者以帳單金額計。" + (cfg.costNote || "");
   }
   // Day pickers in the sheets follow the trip's dates.
   function groupedDayOptions(valueOf) {
@@ -1030,9 +1046,11 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     sight: '<path d="m3 19 6-10 4 6 2-3 6 7z"/><circle cx="17" cy="6" r="2"/>',
     stay: '<path d="M3 18V7M3 14h18v4M21 14v-2a3 3 0 0 0-3-3h-7v5"/><circle cx="7" cy="11" r="2"/>',
     activity: '<path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/>',
-    shop: '<path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2"/>'
+    shop: '<path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2"/>',
+    learning: '<path d="M3 4h7l2 2 2-2h7v15h-7l-2 2-2-2H3zM12 6v15"/>',
+    other: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'
   };
-  const CATS = { transport: "交通", food: "餐飲", sight: "景點", stay: "住宿", activity: "體驗", shop: "採買" };
+  const CATS = { transport: "交通", food: "餐飲", sight: "景點", stay: "住宿", activity: "體驗", shop: "採買", learning: "學習", other: "其他" };
 
   const $ = (id) => document.getElementById(id);
   // Offline mode (see the script above): data lives on this device, and the content file doubles as a full backup.
@@ -1072,7 +1090,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   function effectiveRate(paid, received) { return Number.isFinite(paid) && paid > 0 && Number.isFinite(received) && received > 0 ? received / paid : null; }
   function spendingSummary(records, rates) {
     const totals = {}, missing = new Set(); let twd = 0, pending = 0;
-    records.filter((m) => m.kind !== "exchange").forEach((m) => {
+    records.filter((m) => !m.kind || m.kind === "expense").forEach((m) => {
       if (typeof m.amt !== "number" || !Number.isFinite(m.amt) || m.amt < 0) { pending++; return; }
       const cur = m.cur || "JPY"; totals[cur] = (totals[cur] || 0) + m.amt;
       if (typeof m.actualTwd === "number" && Number.isFinite(m.actualTwd) && m.actualTwd >= 0) twd += m.actualTwd;
@@ -1083,6 +1101,36 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     return { totals, twd, missing: [...missing], pending };
   }
   // END_MONEY_ROUTE_HELPERS
+  // BEGIN_FINANCE_HELPERS
+  const MONEY_CURRENCIES = ["PHP", "TWD", "USD", "VND"];
+  const MONEY_LABELS = { PHP: "披索", TWD: "台幣", USD: "美金", VND: "越南盾", JPY: "舊日幣" };
+  function currencyAmount(raw, cur) { const n = decimalAmount(raw); return n !== null && (!["JPY", "VND"].includes(cur) || Number.isInteger(n)) ? n : null; }
+  function budgetEntries(it) {
+    if (Array.isArray(it.budget)) return it.budget.filter((b) => b && [...MONEY_CURRENCIES, "JPY"].includes(b.cur) && typeof b.amt === "number" && Number.isFinite(b.amt) && b.amt >= 0).map((b) => ({ cur: b.cur, amt: b.amt }));
+    return [typeof it.yen === "number" && it.yen > 0 ? { cur: "JPY", amt: it.yen } : null, typeof it.ntd === "number" && it.ntd > 0 ? { cur: "TWD", amt: it.ntd } : null].filter(Boolean);
+  }
+  function budgetSummary(list, rates) { return spendingSummary(list.flatMap(budgetEntries), rates); }
+  function cashBalance(snapshot, records, cur) {
+    if (!snapshot || typeof snapshot.amount !== "number" || !Number.isFinite(snapshot.amount) || snapshot.amount < 0) return null;
+    const included = new Set(snapshot.includedIds || []); let amount = snapshot.amount, pending = 0;
+    const valid = (n) => typeof n === "number" && Number.isFinite(n) && n >= 0;
+    records.forEach((m) => {
+      if (included.has(m.id) || m.cashIncluded) return;
+      const source = m.cur || "JPY";
+      if (m.kind === "exchange") {
+        if (source === cur) { if (valid(m.amt)) amount -= m.amt; else pending++; }
+        if (m.toCur === cur) { if (valid(m.toAmt)) amount += m.toAmt; else pending++; }
+      } else if (m.kind === "cashflow" && source === cur) {
+        if (valid(m.amt) && ["in", "out"].includes(m.direction)) amount += (m.direction === "in" ? 1 : -1) * m.amt; else pending++;
+      } else if ((!m.kind || m.kind === "expense") && source === cur && m.pay !== "刷卡") {
+        if (m.pay === "現金" && valid(m.amt)) amount -= m.amt;
+        else if (m.amt !== 0) pending++;
+      }
+    });
+    return { amount: Math.round(amount * 1e8) / 1e8, pending };
+  }
+  // END_FINANCE_HELPERS
+
   // BEGIN_SEGMENT_HELPERS
   // Only starting days are stored, so adjacent sections cover the trip without gaps.
   function segmentRanges(raw, total) {
@@ -1490,39 +1538,25 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   }
 
   const num = (v) => (typeof v === "number" && isFinite(v) && v > 0 ? v : 0);
-  const twdOf = (it) => num(it.yen) * RATE + num(it.ntd);
-  const ntd = (n) => "NT$" + Math.round(n).toLocaleString("en-US");
-  const moneyOf = (it) => [num(it.yen) ? yen(it.yen) : "", num(it.ntd) ? ntd(it.ntd) : ""].filter(Boolean).join(" + ");
-  // Card amounts are whole-group totals; the per-person share shows only for costs split evenly
-  // (not stays, and not cards marked perPerson: false such as flights or the rental car).
-  function costHtml(it) {
-    const total = moneyOf(it);
-    if (!total) return "";
-    const even = it.cat !== "stay" && it.perPerson !== false;
-    const per = even ? [num(it.yen) ? yen(it.yen / PAX) : "", num(it.ntd) ? ntd(it.ntd / PAX) : ""].filter(Boolean).join(" + ") : "";
-    return '<span class="yen">全團 ' + total + "</span>" + (per ? '<span class="per">每人 ' + per + "</span>" : "");
-  }
+  const ntd = (n) => "NT$" + n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const moneyOf = (it) => budgetEntries(it).map((b) => originalMoney(b.cur, b.amt)).join(" + ");
+  function costHtml(it) { const total = moneyOf(it); return total ? '<span class="yen">預算 ' + esc(total) + '</span>' : ""; }
   let openCats = new Set();
 
   function renderCost() {
     $("io-box").hidden = !isOwner || !db;
     $("pdf-box").hidden = !isOwner || !db;
-    const priced = items.filter((it) => !isAlt(it) && (num(it.yen) || num(it.ntd)));
-    const jpy = priced.reduce((s, it) => s + num(it.yen), 0);
-    const twd = priced.reduce((s, it) => s + num(it.ntd), 0);
-    const total = jpy * RATE + twd;
-    $("k-total").textContent = ntd(total);
-    $("k-per").textContent = ntd(total / PAX);
-    $("k-jpy").textContent = yen(jpy);
-    $("k-twd").textContent = ntd(twd);
+    const priced = items.filter((it) => !isAlt(it) && budgetEntries(it).length);
+    const budget = budgetSummary(priced, estimateRates());
+    $("budget-total").textContent = budgetText(priced);
+    $("budget-currencies").innerHTML = [...MONEY_CURRENCIES, ...(budget.totals.JPY ? ["JPY"] : [])].map((cur) => '<div class="kpi"><small>' + MONEY_LABELS[cur] + '部分</small><b>' + esc(originalMoney(cur, budget.totals[cur] || 0)) + '</b></div>').join("");
     const byCat = {};
     priced.forEach((it) => { (byCat[it.cat] = byCat[it.cat] || []).push(it); });
-    const cats = Object.entries(byCat).map(([k, list]) => [k, list, list.reduce((s, it) => s + twdOf(it), 0)]).sort((a, b) => b[2] - a[2]);
-    const max = Math.max(1, ...cats.map((c) => c[2]));
-    $("by-cat").innerHTML = cats.length ? cats.map(([k, list, v]) => {
+    const cats = Object.entries(byCat).map(([k, list]) => [k, list, budgetSummary(list, estimateRates()).twd]).sort((a, b) => b[2] - a[2]);
+    $("by-cat").innerHTML = cats.length ? cats.map(([k, list]) => {
       const sub = segmentRanges(cfg.segments, DAYS.length).map((s) => { const rows = list.filter((it) => it.day >= s.startDay && it.day <= s.endDay); return rows.length ? '<details class="cf-day-section"><summary>' + esc(s.name) + '</summary>' + rows.slice().sort((a, b) => a.day - b.day || String(a.time).localeCompare(String(b.time))).map((it) => "<div><span>D" + it.day + " " + esc(it.title) + "</span><span>" + moneyOf(it) + "</span></div>").join("") + "</details>" : ""; }).join("");
       return '<details class="cat" data-cat="' + k + '"' + (openCats.has(k) ? " open" : "") + '><summary><div class="bar"><span class="chev">▶</span><span>' + esc(CATS[k] || "其他") +
-        '</span><span class="track"><span class="fill" style="display:block;width:' + (v / max * 100).toFixed(1) + '%;background:var(--c-' + k + ')"></span></span><span class="v">' + ntd(v) + '</span></div></summary><div class="sub">' + sub + "</div></details>";
+        '</span><span class="v">' + esc(budgetText(list)) + '</span></div></summary><div class="sub">' + sub + "</div></details>";
     }).join("") : '<p class="fine">還沒有填金額的行程。</p>';
     renderDailySpending();
     renderSplit();
@@ -1772,43 +1806,85 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   // 零星花費: spending outside the split list (shrine stamps, parking, small tickets), visible to and kept by the owner only.
   // Each doc: label, day ("11/8", or "" for the whole trip), amt (actual, may be null), cur, hint (estimate text), pay, note.
   let misc = [], miscLoaded = false, mEdit = null, mDelArmed = false;
-  const originalMoney = (cur, amount) => cur + " " + amount.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const originalMoney = (cur, amount) => cur + " " + amount.toLocaleString("en-US", { maximumFractionDigits: ["JPY", "VND"].includes(cur) ? 0 : 2 });
   const estimateRates = () => ({ ...(cfg.estimateRates || {}), JPY: RATE });
-  function summaryText(records) {
-    const v = spendingSummary(records, estimateRates());
+  function financialText(v) {
     return (Object.keys(v.totals).length ? Object.entries(v.totals).map(([cur, amt]) => originalMoney(cur, amt)).join(" ＋ ") : "原幣 0") + "｜" + (v.missing.length ? "已換算部分約 " : "台幣約 ") + ntd(v.twd) + (v.missing.length ? "（" + v.missing.join("、") + " 未填匯率）" : "") + (v.pending ? "；" + v.pending + " 筆金額未填" : "");
   }
+  const summaryText = (records) => financialText(spendingSummary(records, estimateRates()));
+  const budgetText = (list) => financialText(budgetSummary(list, estimateRates()));
+  const snapshotOf = (cur) => ((pcfg.wallet || {}).snapshots || {})[cur];
+  function walletHtml() {
+    return '<h3>帳面現金餘額</h3><p class="fine">以實際盤點為起點，計算之後新增的現金花費、換匯及現金增減；刷卡與行程預算不扣現金。補登盤點前的舊帳時，請勾選「已包含在目前的現金盤點」。</p><div class="wallet-grid">' + MONEY_CURRENCIES.map((cur) => {
+      const snap = snapshotOf(cur), balance = cashBalance(snap, misc, cur);
+      return '<div class="wallet-card"><span>' + MONEY_LABELS[cur] + '</span><b>' + (balance ? esc(originalMoney(cur, balance.amount)) : '未盤點') + '</b><small>' + (balance ? esc('上次盤點 ' + originalMoney(cur, snap.amount) + '｜' + new Date(snap.at).toLocaleString('zh-TW')) + (balance.pending ? '<br>' + balance.pending + ' 筆金額／付款方式待確認，餘額暫不完整' : '') + (balance.amount < 0 ? '<br>餘額為負，請核對紀錄或重新盤點。' : '') : '輸入身上實際現金後開始計算') + '</small></div>';
+    }).join('') + '</div>';
+  }
+  function renderWallet() {
+    $("cash-box").hidden = !isOwner || !db;
+    if (!isOwner || !db || !cfgReady) return;
+    $("cash-box").innerHTML = '<div class="box">' + (miscLoaded ? walletHtml() + '<button type="button" class="btn ghost" id="wallet-open">盤點現金</button><p class="fine" id="wallet-msg" role="status"></p>' : '<p class="fine">正在載入現金紀錄…</p>') + '</div>' + (cfgStored && pcfg.cashHtml ? '<details class="box"><summary>舊現金備忘（原幣保留）</summary>' + pcfg.cashHtml + '</details>' : '');
+  }
+  const closeWallet = () => { $("wallet-scrim").hidden = true; };
+  $("cash-box").addEventListener("click", (e) => {
+    if (!e.target.closest("#wallet-open") || !db || !isOwner || !miscLoaded) return;
+    $("wallet-inputs").innerHTML = MONEY_CURRENCIES.map((cur) => { const balance = cashBalance(snapshotOf(cur), misc, cur); return '<label>' + MONEY_LABELS[cur] + ' ' + cur + '<input class="field" id="wallet-' + cur + '" inputmode="decimal" placeholder="' + (balance ? esc(originalMoney(cur, balance.amount)) : '尚未盤點') + '"></label>'; }).join('');
+    $("wallet-err").hidden = true; $("wallet-scrim").hidden = false;
+  });
+  $("wallet-sheet").addEventListener("submit", async (e) => {
+    e.preventDefault(); if (!db || !isOwner || !miscLoaded) return;
+    const amounts = {};
+    for (const cur of MONEY_CURRENCIES) { const raw = $("wallet-" + cur).value.trim(); if (!raw) continue; const n = currencyAmount(raw, cur); if (n === null) { $("wallet-err").textContent = '請填有效金額，越南盾須為整數，其餘最多兩位小數。'; $("wallet-err").hidden = false; return; } amounts[cur] = n; }
+    if (!Object.keys(amounts).length) { closeWallet(); return; }
+    $("wallet-save").disabled = true;
+    try {
+      const doc = await db.doc("private/config").get(), previous = doc.exists ? doc.data() : {};
+      const wallet = { ...(previous.wallet || {}), snapshots: { ...((previous.wallet || {}).snapshots || {}) } };
+      const at = new Date().toISOString(), includedIds = misc.map((m) => m.id);
+      Object.entries(amounts).forEach(([cur, amount]) => { wallet.snapshots[cur] = { amount, at, includedIds }; });
+      await db.doc("private/config").set({ ...previous, wallet }); closeWallet();
+      if ($("wallet-msg")) $("wallet-msg").textContent = '現金盤點已儲存。';
+    } catch (err) { $("wallet-err").textContent = '盤點儲存失敗，請再試一次。'; $("wallet-err").hidden = false; }
+    finally { $("wallet-save").disabled = false; }
+  });
+  $("wallet-cancel").addEventListener("click", closeWallet);
+  $("wallet-scrim").addEventListener("click", (e) => { if (e.target === $("wallet-scrim")) closeWallet(); });
+  document.addEventListener("keydown", (e) => { if (e.key === 'Escape' && !$("wallet-scrim").hidden) closeWallet(); });
   function renderDailySpending() {
     groupedRecords($("by-day"), DAYS.map((d, i) => ({ ...d, n: i + 1 })), (d) => d.n, (d) => '<div class="li"><span>' + esc(dayLabel(d.n)) + " " + esc(routeText(d, REGIONS)) + '</span><span>' + esc(summaryText(misc.filter((m) => miscDayNumber(m) === d.n))) + '</span></div>');
   }
   function miscValueText(m) {
-    if (m.kind === "exchange") { const r = effectiveRate(m.amt, m.toAmt); return originalMoney(m.cur, m.amt || 0) + " → " + originalMoney(m.toCur, m.toAmt || 0) + (r ? "（1 " + m.cur + " = " + r.toFixed(4) + " " + m.toCur + "）" : ""); }
-    return cellNum(m.amt) === null ? "未填" : originalMoney(m.cur || "JPY", m.amt);
+    if (m.kind === "exchange") { const r = effectiveRate(m.amt, m.toAmt); return (cellNum(m.amt) === null ? "未填" : originalMoney(m.cur, m.amt)) + " → " + (cellNum(m.toAmt) === null ? "未填" : originalMoney(m.toCur, m.toAmt)) + (r ? "（1 " + m.cur + " = " + r.toLocaleString("en-US", { maximumFractionDigits: 8 }) + " " + m.toCur + "）" : ""); }
+    return (m.kind === "cashflow" ? (m.direction === "out" ? "− " : "＋ ") : "") + (cellNum(m.amt) === null ? "未填" : originalMoney(m.cur || "JPY", m.amt));
   }
   function renderMisc() {
     $("misc-box").hidden = !isOwner || !db;
     if (!isOwner || !db) return;
     if (!miscLoaded) { $("misc").innerHTML = '<p class="fine">正在載入…</p>'; return; }
+    renderWallet();
     $("actual-summary").textContent = summaryText(misc);
     const list = misc.slice().sort((a, b) => miscDayNumber(a) - miscDayNumber(b) || (a.order ?? 0) - (b.order ?? 0));
     groupedRecords($("misc"), list, miscDayNumber, (m) => {
-      const sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.pay, m.note].filter(Boolean).join("｜");
+      const sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.kind === "cashflow" ? "現金增減・不列支出" : m.pay, m.note].filter(Boolean).join("｜");
       return '<div class="mitem"><button type="button" class="mrow" data-misc="' + esc(m.id) + '"><span><b>' + esc(m.label || "（未命名）") + '</b><small>' + esc(sub) + '</small></span><span class="mv">' + esc(miscValueText(m)) + '</span></button>' + rcStrip("misc", m) + '</div>';
     });
     if (!list.length) $("misc").innerHTML = '<p class="fine">還沒有紀錄。</p>';
     renderDailySpending();
   }
   function updateExchangeFields() {
-    const exchange = $("ms-kind").value === "exchange";
-    $("ms-exchange").hidden = !exchange; $("ms-pay").hidden = exchange; $("ms-actual-wrap").hidden = exchange;
-    const rate = effectiveRate(decimalAmount($("ms-amt").value), decimalAmount($("ms-to-amt").value));
-    $("ms-rate").textContent = segVal("ms-cur", "cur") === $("ms-to-cur").value ? "請選擇不同的付出與收到幣別。" : rate ? "成交匯率：1 " + segVal("ms-cur", "cur") + " = " + rate.toFixed(4) + " " + $("ms-to-cur").value : "填入實付與實收金額，自動試算成交匯率。";
+    const kind = $("ms-kind").value, exchange = kind === "exchange";
+    $("ms-exchange").hidden = !exchange; $("ms-pay").hidden = kind !== "expense"; $("ms-actual-wrap").hidden = kind !== "expense";
+    $("ms-direction-wrap").hidden = kind !== "cashflow";
+    const rate = effectiveRate(currencyAmount($("ms-amt").value, segVal("ms-cur", "cur")), currencyAmount($("ms-to-amt").value, $("ms-to-cur").value));
+    $("ms-rate").textContent = segVal("ms-cur", "cur") === $("ms-to-cur").value ? "請選擇不同的付出與收到幣別。" : rate ? "成交匯率：1 " + segVal("ms-cur", "cur") + " = " + rate.toLocaleString("en-US", { maximumFractionDigits: 8 }) + " " + $("ms-to-cur").value : "填入實付與實收金額，自動試算成交匯率。";
   }
   function openMisc(m) {
     if (!isOwner || !db) return;
     mEdit = m || null; mDelArmed = false;
-    $("ms-title").textContent = m ? "修改花費／換匯" : "新增花費／換匯";
-    $("ms-kind").value = m && m.kind === "exchange" ? "exchange" : "expense";
+    $("ms-title").textContent = m ? "修改花費／金流" : "新增花費／金流";
+    $("ms-kind").value = m && ["exchange", "cashflow"].includes(m.kind) ? m.kind : "expense";
+    $("ms-direction").value = m && m.direction === "out" ? "out" : "in"; $("ms-cash-included").checked = !!(m && m.cashIncluded);
+    $("ms-to-legacy-jpy").hidden = !(m && m.toCur === "JPY");
     $("ms-to-cur").value = m && m.toCur || "PHP"; $("ms-to-amt").value = m && m.toAmt != null ? m.toAmt : "";
     $("ms-actual").value = m && m.actualTwd != null ? m.actualTwd : "";
     $("ms-legacy-jpy").hidden = !(m && (!m.cur || m.cur === "JPY"));
@@ -1818,7 +1894,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     if (savedDate && !isoTripDay(savedDate)) $("ms-day").insertAdjacentHTML("beforeend", '<option value="' + esc(savedDate) + '">' + esc(savedDate) + '（旅程外）</option>');
     $("ms-day").value = m ? savedDate || "" : isoOf(dateOf(day));
     segSet("ms-cur", "cur", m ? m.cur || "JPY" : "PHP");
-    segSet("ms-pay", "pay", m && m.pay === "刷卡" ? "刷卡" : "現金");
+    segSet("ms-pay", "pay", m ? (["現金", "刷卡"].includes(m.pay) ? m.pay : "待確認") : "現金");
     $("ms-amt").value = m && cellNum(m.amt) !== null ? String(m.amt) : "";
     $("ms-hint").value = m ? m.hint || "" : "";
     $("ms-note").value = m ? m.note || "" : "";
@@ -1845,18 +1921,21 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   $("msheet").addEventListener("submit", (e) => {
     e.preventDefault();
     const body = {
-      label: $("ms-label").value.trim(), day: $("ms-day").value ? MISC_DAYS[isoTripDay($("ms-day").value)] || "" : "", amt: decimalAmount($("ms-amt").value), cur: segVal("ms-cur", "cur"),
+      label: $("ms-label").value.trim(), day: $("ms-day").value ? MISC_DAYS[isoTripDay($("ms-day").value)] || "" : "", amt: currencyAmount($("ms-amt").value, segVal("ms-cur", "cur")), cur: segVal("ms-cur", "cur"),
       pay: segVal("ms-pay", "pay"), hint: $("ms-hint").value.trim(), note: $("ms-note").value.trim(),
       order: mEdit && typeof mEdit.order === "number" ? mEdit.order : Date.now(),
       receipts: mEdit && Array.isArray(mEdit.receipts) ? mEdit.receipts : []
     };
+    if (body.pay === "待確認" && mEdit && mEdit.pay && !["現金", "刷卡"].includes(mEdit.pay)) body.pay = mEdit.pay;
     body.kind = $("ms-kind").value;
+    body.cashIncluded = $("ms-cash-included").checked;
+    body.direction = body.kind === "cashflow" ? $("ms-direction").value : null;
     body.date = $("ms-day").value;
     body.actualTwd = body.kind === "expense" ? decimalAmount($("ms-actual").value) : null;
     body.toCur = body.kind === "exchange" ? $("ms-to-cur").value : null;
-    body.toAmt = body.kind === "exchange" ? decimalAmount($("ms-to-amt").value) : null;
-    const invalid = ($("ms-amt").value.trim() && body.amt === null) || (body.kind === "expense" && $("ms-actual").value.trim() && body.actualTwd === null) || (body.kind === "exchange" && (!effectiveRate(body.amt, body.toAmt) || body.cur === body.toCur));
-    if (invalid) { $("ms-err").textContent = "請填有效金額（最多兩位小數）；換匯兩邊金額須大於 0，且幣別不同。"; $("ms-err").hidden = false; return; }
+    body.toAmt = body.kind === "exchange" ? currencyAmount($("ms-to-amt").value, body.toCur) : null;
+    const invalid = ($("ms-amt").value.trim() && body.amt === null) || (body.kind === "expense" && $("ms-actual").value.trim() && body.actualTwd === null) || (body.kind === "exchange" && (!effectiveRate(body.amt, body.toAmt) || body.cur === body.toCur)) || (body.kind === "cashflow" && !(body.amt > 0));
+    if (invalid) { $("ms-err").textContent = "請填有效金額（越南盾、日幣為整數，其餘最多兩位小數）；現金增減及換匯金額須大於 0，換匯幣別須不同。"; $("ms-err").hidden = false; return; }
     if (!body.label) { $("ms-err").textContent = "請填名稱。"; $("ms-err").hidden = false; return; }
     miscWrite(() => (mEdit ? db.doc("misc/" + mEdit.id).set(body) : db.collection("misc").add(body)));
   });
@@ -2178,7 +2257,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     $("cf-start").value = cd.start;
     $("cf-days").value = cd.days.length;
     $("cf-rate").value = c.rate || 0.2;
-    $("cf-usd").value = (c.estimateRates || {}).USD || ""; $("cf-php").value = (c.estimateRates || {}).PHP || "";
+    $("cf-usd").value = (c.estimateRates || {}).USD || ""; $("cf-php").value = (c.estimateRates || {}).PHP || ""; $("cf-vnd").value = (c.estimateRates || {}).VND || "";
     $("cf-twd").value = c.twdLabel || "";
     $("cf-note").value = c.costNote || "";
     $("cf-pack").value = (c.pack && Array.isArray(c.pack.items) ? c.pack.items : []).join("\n");
@@ -2343,7 +2422,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     const segmentError = segmentProblem(cd.segments, cd.days.length);
     if (segmentError) return cfErr(segmentError);
     const estimateRates = {};
-    for (const cur of ["USD", "PHP"]) { const raw = $("cf-" + cur.toLowerCase()).value.trim(), value = Number(raw); if (raw && !(Number.isFinite(value) && value > 0)) return cfErr("估算匯率須大於 0，或留白。"); if (raw) estimateRates[cur] = value; }
+    for (const cur of ["USD", "PHP", "VND"]) { const raw = $("cf-" + cur.toLowerCase()).value.trim(), value = Number(raw); if (raw && !(Number.isFinite(value) && value > 0)) return cfErr("估算匯率須大於 0，或留白。"); if (raw) estimateRates[cur] = value; }
     const people = cd.people.map((x) => ({ key: x.key, name: x.name.trim(), group: x.group }));
     if (!(rate > 0)) return cfErr("匯率要是大於 0 的數字，例如 0.21。");
     const regions = Object.fromEntries(cd.regions.map((r) => [r.key, { name: r.name.trim() || "地區", tone: r.tone }]));
@@ -2405,7 +2484,9 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
 
   // Sheet
   $("f-cat").innerHTML = Object.entries(CATS).map(([k, v]) => '<option value="' + k + '">' + v + "</option>").join("");
-  let delArmed = false;
+  let delArmed = false, retainedBudget = [];
+  function renderRetainedBudget() { $("f-retained").hidden = !retainedBudget.length; $("f-retained").innerHTML = "保留舊附加預算：" + retainedBudget.map((b) => esc(originalMoney(b.cur, b.amt))).join(" + ") + ' <button type="button" class="btn ghost" id="f-remove-retained">移除舊附加預算</button>'; }
+  $("f-retained").addEventListener("click", (e) => { if (e.target.closest("#f-remove-retained")) { retainedBudget = []; renderRetainedBudget(); } });
   function openSheet(it) {
     if (!db || !canWrite) return;
     editing = it || null;
@@ -2416,8 +2497,10 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
     $("f-title").value = it ? it.title || "" : "";
     $("f-note").value = it ? it.note || "" : "";
     $("f-cat").value = it ? it.cat || "sight" : "sight";
-    $("f-yen").value = it && typeof it.yen === "number" ? it.yen : "";
-    $("f-ntd").value = it && typeof it.ntd === "number" ? it.ntd : "";
+    const previousBudget = budgetEntries(it || {}), primary = previousBudget[0];
+    retainedBudget = previousBudget.slice(1); renderRetainedBudget();
+    $("f-budget").value = primary ? String(primary.amt) : ""; $("f-cur").value = primary ? primary.cur : "PHP";
+    $("f-legacy-jpy").hidden = !(primary && primary.cur === "JPY");
     $("f-end").value = it && isTime(it.end) ? it.end : "";
     $("f-mode").value = it && it.move && it.move.mode ? it.move.mode : "";
     $("f-move").value = it && it.move && it.move.text ? it.move.text : "";
@@ -2437,7 +2520,8 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
 
   $("sheet").addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const y = $("f-yen").value.trim();
+    const rawBudget = $("f-budget").value.trim(), budgetCur = $("f-cur").value, budgetAmount = currencyAmount(rawBudget, budgetCur);
+    if (rawBudget && budgetAmount === null) { $("f-err").textContent = "請填有效預算，越南盾、日幣為整數，其餘最多兩位小數。"; $("f-err").hidden = false; return; }
     const body = {
       day: parseInt($("f-day").value, 10),
       time: $("f-time").value,
@@ -2447,9 +2531,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       url: $("f-url").value.trim(),
       done: editing ? !!editing.done : false
     };
-    if (y !== "") body.yen = Math.max(0, Number(y));
-    const nt = $("f-ntd").value.trim();
-    if (nt !== "") body.ntd = Math.max(0, Number(nt));
+    body.budget = (rawBudget ? [{ cur: budgetCur, amt: budgetAmount }] : []).concat(retainedBudget);
     if (editing && editing.preview && editing.url === body.url) body.preview = editing.preview;
     if (editing && editing.info) body.info = editing.info;
     if (editing && editing.perPerson === false) body.perPerson = false;
@@ -2632,7 +2714,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   async function exportContent() {
     ioMsg("正在整理…");
     const priv = await db.doc("private/config").get().then((s) => (s.exists ? s.data() : {}), () => pcfg);
-    const pack = { format: CONTENT_FORMAT, version: 1, exportedAt: new Date().toISOString(),
+    const pack = { format: CONTENT_FORMAT, version: 1, moneyVersion: 2, exportedAt: new Date().toISOString(),
       config: cfg, private: priv,
       data: { items: asDocs(items), split: asDocs(split), misc: asDocs(misc), todos: asDocs(todos), meta: { maps, plans: planSel } } };
     if (LOCAL) pack.local = await window.__tripLocal.backup();
@@ -2646,6 +2728,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
   }
   function checkPack(p) {
     if (!p || p.format !== CONTENT_FORMAT || !p.data || !p.config || !Array.isArray(p.config.days)) return "這不是行程內容檔。";
+    if (p.moneyVersion && p.moneyVersion > 2) return "此備份使用較新的金額格式，請更新程式後匯入。";
     for (const c of CONTENT_COLS) {
       const d = p.data[c] || {};
       if (typeof d !== "object" || Array.isArray(d)) return "內容檔的 " + c + " 格式不對。";
@@ -2702,7 +2785,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       '<div class="pd-t">' + plan + esc(it.title) + '<span class="pd-tag">' + esc(CATS[it.cat] || "其他") + "</span></div>" +
       (it.note ? '<p class="pd-note">' + esc(it.note) + "</p>" : "") +
       (kv.length ? '<dl class="pd-kv">' + kv.map(([k, v, w]) => "<dt>" + k + "</dt><dd" + (w ? ' class="warn"' : "") + ">" + v + "</dd>").join("") + "</dl>" : "") +
-      (cost ? '<div class="pd-cost">全團 ' + cost + "</div>" : "") + guide + "</div></div>";
+      (cost ? '<div class="pd-cost">預算 ' + cost + "</div>" : "") + guide + "</div></div>";
   }
   function pdfMoveHtml(a, b) {
     const m = a.move && typeof a.move === "object" ? a.move : null;
@@ -2733,31 +2816,32 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
       h += "</section>";
     });
     if (!full) return h;
-    const priced = items.filter((it) => !isAlt(it) && (num(it.yen) || num(it.ntd)));
-    const jpy = priced.reduce((s, it) => s + num(it.yen), 0), twd = priced.reduce((s, it) => s + num(it.ntd), 0);
-    h += '<section class="pd-sec">' + blk("<h2>行程預算（不併入實際支出）</h2>") + blk('<div class="pd-kpi"><div><small>全團總計</small><b>' + ntd(jpy * RATE + twd) + "</b></div><div><small>每人平均</small><b>" + ntd((jpy * RATE + twd) / PAX) +
-      "</b></div><div><small>日幣部分</small><b>" + yen(jpy) + "</b></div><div><small>" + esc(cfg.twdLabel || "台幣部分") + "</small><b>" + ntd(twd) + "</b></div></div>") +
-      blk('<div class="box"><h3>依天數</h3><div class="list">' + DAYS.map((d, i) => '<div class="li"><span>' + dayLabel(i + 1) + " " + esc(d.theme) + "</span><span>" + ntd(priced.filter((it) => it.day === i + 1).reduce((a, it) => a + twdOf(it), 0)) + "</span></div>").join("") + "</div></div>") +
-      (pcfg.cashHtml ? blk('<div class="box">' + pcfg.cashHtml.replace(/^<div class="box">|<\/div>$/g, "") + "</div>") : "") + "</section>";
-    const byDate = (a, b) => splitDate(a) - splitDate(b) || String(a.time || "").localeCompare(String(b.time || "")) || (a.order ?? 0) - (b.order ?? 0);
-    const keys = BILL_GROUPS.flatMap((g) => g.members).filter((k) => PNAME[k]);
-    h += '<section class="pd-sec" style="--n:' + keys.length + '">' + blk("<h2>分攤表</h2>") + blk('<p class="pd-sub">黃底＝已結，框線＝尚欠，空白＝還沒記，—＝不分攤。</p><div class="pd-sp head"><span>日期</span><span>項目</span><span>墊付</span>' + keys.map((k) => "<span>" + esc(PNAME[k]) + "</span>").join("") + "</div>");
-    split.slice().sort(byDate).forEach((r) => {
-      const na = Array.isArray(r.na) ? r.na : [], cells = r.cells && typeof r.cells === "object" ? r.cells : {};
-      const payer = payerOf(r), amt = cellNum(r.paidAmt);
-      const pay = payer === "none" ? "無墊付" : PNAME[payer] + " " + (amt === null ? "未填" : fmtCur(payCurOf(r), amt));
-      const sub = [r.pay, r.hint ? "預算 " + r.hint : ""].filter(Boolean).join("｜");
-      h += blk('<div class="pd-sp"><span>' + esc(splitHead(splitDate(r))) + "</span><span>" + esc(splitLabel(r)) + (sub ? "<small>" + esc(sub) + "</small>" : "") + "</span><span>" + esc(pay) + "</span>" + keys.map((k) => {
-        if (na.includes(k)) return '<span class="pd-c na">—</span>';
-        const v = cellNum(cells[k]);
-        return v === null ? '<span class="pd-c blank">' + esc(hintOf(r, k)) + "</span>" : '<span class="pd-c ' + stateOf(r, k) + '">' + esc(fmtCur(curOf(r, k), v)) + "</span>";
-      }).join("") + "</div>");
-    });
-    h += "</section>";
-    h += blk("<h2>實際支出（換匯不計入）</h2><p>" + esc(summaryText(misc)) + "</p>");
+    const priced = items.filter((it) => !isAlt(it) && budgetEntries(it).length);
+    h += '<section class="pd-sec">' + blk("<h2>行程預算（不併入實際支出）</h2><p>" + esc(budgetText(priced)) + "</p>") +
+      segmentRanges(cfg.segments, DAYS.length).map((s) => blk('<div class="box"><h3>' + esc(s.name) + '</h3><div class="list">' + DAYS.slice(s.startDay - 1, s.endDay).map((d, j) => { const n = s.startDay + j; return '<div class="li"><span>' + dayLabel(n) + " " + esc(d.theme) + "</span><span>" + esc(budgetText(priced.filter((it) => it.day === n))) + "</span></div>"; }).join("") + "</div></div>")).join('') +
+      blk('<div class="box">' + walletHtml() + '</div>') +
+      (cfgStored && pcfg.cashHtml ? blk('<div class="box"><h3>舊現金備忘（原幣保留）</h3>' + pcfg.cashHtml + '</div>') : '') + "</section>";
+    if (split.length) {
+      const byDate = (a, b) => splitDate(a) - splitDate(b) || String(a.time || "").localeCompare(String(b.time || "")) || (a.order ?? 0) - (b.order ?? 0);
+      const keys = BILL_GROUPS.flatMap((g) => g.members).filter((k) => PNAME[k]);
+      h += '<section class="pd-sec" style="--n:' + keys.length + '">' + blk("<h2>分攤表</h2>") + blk('<p class="pd-sub">黃底＝已結，框線＝尚欠，空白＝還沒記，—＝不分攤。</p><div class="pd-sp head"><span>日期</span><span>項目</span><span>墊付</span>' + keys.map((k) => "<span>" + esc(PNAME[k]) + "</span>").join("") + "</div>");
+      split.slice().sort(byDate).forEach((r) => {
+        const na = Array.isArray(r.na) ? r.na : [], cells = r.cells && typeof r.cells === "object" ? r.cells : {};
+        const payer = payerOf(r), amt = cellNum(r.paidAmt);
+        const pay = payer === "none" ? "無墊付" : PNAME[payer] + " " + (amt === null ? "未填" : fmtCur(payCurOf(r), amt));
+        const sub = [r.pay, r.hint ? "預算 " + r.hint : ""].filter(Boolean).join("｜");
+        h += blk('<div class="pd-sp"><span>' + esc(splitHead(splitDate(r))) + "</span><span>" + esc(splitLabel(r)) + (sub ? "<small>" + esc(sub) + "</small>" : "") + "</span><span>" + esc(pay) + "</span>" + keys.map((k) => {
+          if (na.includes(k)) return '<span class="pd-c na">—</span>';
+          const v = cellNum(cells[k]);
+          return v === null ? '<span class="pd-c blank">' + esc(hintOf(r, k)) + "</span>" : '<span class="pd-c ' + stateOf(r, k) + '">' + esc(fmtCur(curOf(r, k), v)) + "</span>";
+        }).join("") + "</div>");
+      });
+      h += "</section>";
+    }
+    h += '<section class="pd-sec">' + blk("<h2>實際支出（換匯、現金增減不計入）</h2><p>" + esc(summaryText(misc)) + "</p>");
     const ml = misc.slice().sort((a, b) => miscDayNumber(a) - miscDayNumber(b) || (a.order ?? 0) - (b.order ?? 0));
-    h += '<section class="pd-sec">' + blk("<h2>花費與換匯明細</h2>") + (ml.length ? ml.map((m) => {
-      const v = cellNum(m.amt), sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.pay, m.hint ? "預估 " + m.hint : "", m.note].filter(Boolean).join("｜");
+    h += blk("<h2>花費與金流明細</h2>") + (ml.length ? ml.map((m) => {
+      const v = cellNum(m.amt), sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.kind === "cashflow" ? "現金增減・不列支出" : m.pay, m.hint ? "預估 " + m.hint : "", m.note].filter(Boolean).join("｜");
       return blk('<div class="li"><span><b>' + esc(m.label || "（未命名）") + '</b><br><small class="pd-sub">' + esc(sub) + "</small></span><span>" + esc(miscValueText(m)) + "</span></div>");
     }).join("") : blk('<p class="pd-sub">沒有花費或換匯紀錄。</p>'));
     // 資訊 starts a page; each of its boxes is its own block so a page break falls between them.

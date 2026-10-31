@@ -11,6 +11,9 @@
 ```sh
 node tests/trip-segments.mjs
 node tests/trip-money-routes.mjs
+node tests/trip-currency-wallet.mjs
 ```
 
 兩組各 8 項，只讀取應用程式的純函式，使用合成資料。區段測試同時解析全部內嵌腳本。本次工作環境透過已提供的 Node runtime 執行，沒有安裝套件。
+
+多幣預算與現金盤點另有 12 項，涵蓋舊雙幣保留、VND 整數、缺匯率、金流不列支出、刷卡不扣現金、補登、編輯刪除、重新盤點及 JSON 往返。全部使用合成資料，不代表真實手機上的還原已驗證。
