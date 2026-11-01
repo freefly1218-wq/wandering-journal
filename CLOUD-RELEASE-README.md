@@ -1,15 +1,35 @@
-# Private cloud journal, GPT collaboration and linked expenses review
+# Private cloud journal: offline Home Screen startup repair
 
-Sites v4 source commit: `f433ed94f27fa2c9a96518219f766cd7dba9555d`. Reconstruct this version by extracting the existing **v3 base** `cloud-sites-source.tar.gz` (base source `021f5b0a08ff2dcef1cf67f42bf9155c84d08a3f`, SHA-256 `fa62e90e60a35ee0d443d8592b4a124c535b48553a830659d30c6413dce5df32`), then running `git apply ../cloud-linked-expenses.patch` inside `cloud-sites/`. This exact reconstruction was checked against all 143 current source files. No runtime secrets or private trip content are included.
+Sites v5 source: `169d29dc1b6174bd196f737d6b15b92e02e23476`. Reconstruct it by extracting the existing v3 `cloud-sites-source.tar.gz` (source `021f5b0a08ff2dcef1cf67f42bf9155c84d08a3f`, SHA-256 `fa62e90e60a35ee0d443d8592b4a124c535b48553a830659d30c6413dce5df32`), then running these commands inside `cloud-sites/`:
 
-This PR preserves GitHub main, development and the existing offline Pages runtime. The exact cloud application is maintained in the Sites source repository. `cloud-source-review.patch` and the other `cloud-*` runtime copies describe the v3 base; **`cloud-linked-expenses.patch` contains every v4 source change**, including readable UI, sync, tests and usage documentation. The base archive is intentionally retained; apply the delta for current source. The MCP route is `cloud-mcp-route.ts`; the journal API route is `cloud-route.ts`.
+```sh
+git apply ../cloud-linked-expenses.patch
+git apply ../cloud-offline-startup.patch
+```
 
-Owner-only ChatGPT login, durable offline outbox, cross-device sync, explicit conflicts, revocable itinerary-only sharing, and six finalized GPT co-edit tools retain their existing behavior. GPT multi-document edits use guarded D1 batches and preserve private before/after audit and reviewed undo.
+This reconstruction matches all 146 current source files exactly. The source archive and other `cloud-*` runtime copies remain the v3 base; the two complete delta files contain every subsequent UI, sync, test and documentation change. No environment secrets, local runtime files or personal travel records are included.
 
-Itinerary and expenses now link by stable ID. Save an itinerary and open a prefilled payment; record another payment from an existing card; or create a restaurant card while entering a payment. One card supports multiple payments. New cards have no copied payment amount or private note; budgets and actual spending remain separate. Payment descriptions/dates remain historical if the itinerary is renamed/rescheduled. Unlink/delete never cascades into the other record. See `cloud-linked-expenses.md` for semantics and limits.
+## iPhone Home Screen setup
 
-56 checks passed: 17 cloud tests, 11 collaboration tests and 28 segment/money/wallet checks. Production build passed. Local browser verified both entry directions, multiple linked payments, loss of server connection with two durable pending documents, then sync and reload preserving the link. Physical phone/tablet airplane-mode and file-save/restore remain user trial checks. Offline pair creation is one IndexedDB transaction; server sync retains per-document conflict handling and eventual convergence.
+1. Keep the phone online and open the journal **from its Home Screen icon**. Sign in with the owner's existing ChatGPT account.
+2. Press **準備離線使用** on a personally controlled device. Wait for **可離線開啟・已準備本機行程與記帳**, then confirm cloud synchronization.
+3. Close the app, turn on airplane mode, and reopen using the icon. Edits save locally; reconnect and keep the app open to synchronize.
 
-All private starter content, imported records, exchange-rate settings, source emails and personal backups stay outside this public review and website static assets. The existing private database is retained without a schema migration. Publication follows this PR source update; no main merge or original Pages deployment is included.
+Safari tabs and Home Screen apps may use different data spaces; prepare the installed app itself. Do not clear site data or delete the app to fix this. Sync pending edits and keep a full backup before considering reinstallation. Existing account ownership, local database names, private documents, money, conflicts and backups are preserved.
 
-Converted TWD amounts display exactly two decimal places; underlying exchange rates retain their full precision, including VND. Actual transaction amounts are preserved.
+## Fix
+
+The old startup waited for cloud requests before showing cached data and registered the worker only after sync. Optional PDF/map download failures could prevent the entire shell installation, errors were hidden, and canonical redirects could contaminate navigation responses. The new version checks the public shell early, verifies its core cache, opens trusted local data immediately, bounds network waits, and serves prepared launch URLs from a coherent cache. Old `.html`, root, clean, trailing-slash and query launch URLs work. API/auth/share/private resources are never placed in the public shell cache. Cloud 401/403 still lock access; remembered offline identity never authorizes cloud requests.
+
+The icon remains the existing dark green mountain/sun PNG, with 192 and 512 pixel sizes. iPhone Apple Touch Icon, localized Home Screen name and manifest metadata now reside in valid HTML head. The manifest launches `/trip` and keeps the previous `/trip.html` app identity. Photos and external maps are available offline only to the extent already downloaded.
+
+## Existing features
+
+Private ChatGPT login, cloud sync, durable offline outbox, explicit revision conflicts, itinerary-only revocable friend links, linked itinerary/payments, two-decimal TWD display, and finalized GPT edits with private audit/undo retain their behavior. The private database is not migrated or overwritten.
+
+## Validation
+
+69 checks passed: 17 cloud, 11 GPT collaboration, 13 offline startup and 28 segment/money/wallet checks. Production build passed. Real Chrome browser QA prepared a new origin, closed the tab, stopped the local server, reopened both legacy and canonical launch URLs without a server, edited offline, reopened again with the pending edit preserved, and synchronized after reconnecting. Final cold-start UI verifies the current cache revision. This is desktop browser evidence; the physical iPhone Home Screen airplane-mode check remains the user's acceptance test.
+
+Current app: https://lun-wanderer-journal.freefly1218.chatgpt.site
+GitHub main, development and the original Pages app are unchanged by this update. Code is reviewed in PR #6 before Sites publication. Private data and rate settings are absent from source and schema migrations.
