@@ -1,3 +1,4 @@
+import {collaborationTool} from './journal-collaboration.mjs';
 const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const pathOK=p=>typeof p==='string'&&p.length<250&&/^(items|misc|split|todos|meta|private|notes|data)\/[A-Za-z0-9_~:@+./-]+$/.test(p)&&!p.includes('..')&&!p.includes('//');
 const idOK=s=>typeof s==='string'&&/^[A-Za-z0-9_-]{16,100}$/.test(s);
@@ -30,6 +31,10 @@ export async function journalAPI(request,{db,bucket,user,ownerEmail}){
     if(!user)return json({error:'請登入 ChatGPT。',login:true},401);
     if(!ownerEmail||user.email?.toLowerCase()!==ownerEmail.toLowerCase())return json({error:'此私人日誌只允許擁有者編輯。'},403);
     const owner=user.userId;
+    if(route==='collaboration'&&method==='POST'){
+      const body=await request.json();if(!['prepare_undo_trip_update','commit_trip_update'].includes(body.action))return json({error:'不支援此操作。'},400);
+      try{return json(await collaborationTool(body.action,body.args,{db,user,ownerEmail}));}catch(e){return json({error:e.status?e.message:'協作暫時無法完成。'},e.status||500);}
+    }
     if(route==='session'&&method==='GET')return json({userId:owner,displayName:user.displayName||'我',version:1});
     if(route==='changes'&&method==='GET'){
       const after=Number(url.searchParams.get('after')||0);if(!Number.isSafeInteger(after)||after<0)return json({error:'無效同步位置。'},400);

@@ -1,13 +1,13 @@
-# Sites cloud release review
+# Private cloud journal and GPT collaboration review
 
-Source commit: `b827d305a34bc93d8fead82da33080ee9f948982` in the Sites source repository for project `appgprj_6ae3057b2f208191bb31ad526047824b`.
+Sites source commit: `021f5b0a08ff2dcef1cf67f42bf9155c84d08a3f`. Full source: `cloud-sites-source.tar.gz`, extracted as `cloud-sites/`; SHA-256 `fa62e90e60a35ee0d443d8592b4a124c535b48553a830659d30c6413dce5df32`. No runtime secrets or private trip content are included.
 
-This PR preserves GitHub main, development's existing offline runtime, and GitHub Pages. The complete independently deployable cloud application is in `cloud-sites-source.tar.gz`, extracted as `cloud-sites/`; SHA-256 `d85a9cbcb925319a445235a88f35ee0944a8b499d8cad584bcad3cabfa6b71bd`. It contains the exact committed source tree, not browser data or credentials.
+This PR preserves GitHub main, development and the existing offline Pages runtime. The exact cloud application is maintained in the Sites source repository. `cloud-source-review.patch` exposes the main source as text; `cloud-*` runtime files are direct review copies using their original basenames. The MCP route is `cloud-mcp-route.ts`; the journal API route is `cloud-route.ts`.
 
-`cloud-source-review.patch` exposes the primary application source as text for review. Other `cloud-*` text files are direct review copies of the named files inside the source archive: `cloud-cloud.js` is public/cloud.js; `cloud-sync-core.js` is public/sync-core.js; `cloud-journal-api.mjs` is lib/journal-api.mjs; `cloud-route.ts` is app/api/journal/[...path]/route.ts; `cloud-schema.ts` and `cloud-0000_mute_microchip.sql` define storage.
+New behavior: six owner-only GPT tools read the latest itinerary and document revisions, preview proposed edits, commit only finalized decisions, list audit history and prepare undo. Multi-document writes use a single guarded D1 batch; conflicts fail without partial writes, retries are idempotent, and every accepted edit preserves before/after/source data in private synced documents. Browser GPT collaboration history supports reviewed undo.
 
-See `cloud-cloud-release.md` for migration, privacy, backup semantics, limits, testing evidence and remaining physical-device checks.
+The MCP capability creates a Sites-managed private plugin on publication. Installation/connection must be separately verified. Friend links retain their existing read-only whitelist, and offline edits keep the existing outbox/conflict behavior. Migration 0001 adds only the private proposal table.
 
-Validation: 15 cloud scenarios and 28 existing segment/money/wallet checks passed. Local browser two-origin sync, concurrent conflict resolution, private photo pull, share privacy and revocation passed. Production build passed. This is a trial release, and no physical phone/tablet offline or file-save/restore result is claimed.
+54 checks passed: 15 cloud tests, 11 collaboration tests and 28 existing segment/money/wallet checks. Local HTTP /mcp and browser history/undo were tested with a synthetic todo. The separate private starter JSON was structurally verified and imported in the local UI; no personal itinerary is embedded in source, migration, website assets or this PR.
 
-The browser-based GitHub upload is used because the GitHub connector still returns 403 for code writes. No main merge or existing Pages deployment is part of this PR. Sites publication uses the exact source commit above.
+See `cloud-gpt-collaboration.md` and `cloud-cloud-release.md` for data semantics, limits, deployment workflow and earlier offline evidence. Production publication follows the PR source update. No main merge or existing Pages deployment is part of this PR.
