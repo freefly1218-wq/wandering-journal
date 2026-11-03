@@ -1,0 +1,377 @@
+diff --git a/docs/offline-startup.md b/docs/offline-startup.md
+new file mode 100644
+index 0000000..b14dc29
+--- /dev/null
++++ b/docs/offline-startup.md
+@@ -0,0 +1,31 @@
++# iPhone 主畫面 App：離線啟動與圖示
++
++## 使用方式
++
++1. 保持連網，從 **iPhone 主畫面圖示** 開啟日誌；使用自己的 ChatGPT 帳號登入。
++2. 按上方 **準備離線使用**。這代表允許這台裝置在離線時開啟已下載的私人資料；共用裝置不要啟用。
++3. 等到顯示 **可離線開啟・已準備本機行程與記帳**，並確認雲端顯示已同步。
++4. 關閉 App、開啟飛航模式，再從主畫面圖示開啟。行程、日記和花費可繼續編輯；修改先存裝置，復網並打開 App 後同步。
++5. 照片及外部地圖以已下載內容為準。首次登入、未下載過的資料、分享新連結需要網路。
++
++Safari 分頁與主畫面 App 可能使用不同的資料空間。不能只在 Safari 分頁完成準備，就假定主畫面 App 已有離線資料。請以主畫面 App 裡顯示的準備狀態為準。若仍顯示舊介面，保持連網重新開啟一次，讓新版離線程式完成更新。
++
++不要為修復而清除網站資料或刪除 App。先確保待同步紀錄已同步並另存完整備份；這次更新不刪除本機資料、不更改 IndexedDB 資料庫名稱，也不搬移私人資料。
++
++## App 圖示
++
++現有圖示是深綠底、橘色山與太陽，保留現有 192×192 和 512×512 PNG。iPhone 的 `apple-touch-icon`、主畫面名稱及 manifest 現在都在有效 HTML head 內；Android 從 manifest 讀取圖示。manifest 的 start URL 改成正式 `/trip`，id 保持原本 `/trip.html` 以維持既有安裝身分。舊的 `/`、`/trip.html`、尾斜線與帶參數啟動網址仍支援。
++
++未來換圖，替換兩個 PNG 並更新離線快取版本即可；iPhone 可能保留安裝時的圖示。需要重新加入主畫面時，先同步及備份，再處理舊圖示。
++
++## 修復原因與邊界
++
++- 原先 service worker 在初次同步之後才註冊，而且註冊失敗被忽略；現在先準備公開程式殼並顯示檢查結果。
++- 原先地圖／PDF 任一選用資源下載失敗會使整個快取安裝失敗；現在核心畫面、程式及資料引擎完整才啟用，選用資源獨立下載。
++- 原先啟動要先等待網路及登入檢查；現在已授權的裝置先讀本機資料，再背景同步，請求有明確逾時。
++- 對啟動畫面採版本內快取優先，避免無訊號時等待網路及 canonical redirect；快取 HTML 會移除 redirected response 狀態，避免 navigation 的 redirect-mode 限制。
++- 匯入、帳號權限、revision 衝突、耐久佇列與備份規則保留。API、登入頁、朋友分享與私人檔案不進公開程式快取。離線身分只選擇已授權本機資料庫，每個雲端 API 仍驗證線上身分；401/403 會鎖定畫面，不當作網路中斷。
++
++## 驗證
++
++69 個檢查：17 雲端、11 GPT 協作、13 離線啟動、28 區段／路線／金額／現金檢查。實際 Chrome 測試先完成準備，關閉頁面並停止本機伺服器，再從舊 `.html` 及帶參數正式啟動網址重新開啟；離線新增行程，關閉重開仍保留待同步記錄，復網後同步。這不是在實體 iPhone 上完成的飛航模式測試；發佈後仍需由使用者在自己的主畫面 App 驗收。
+diff --git a/public/cloud.js b/public/cloud.js
+index ec12c7c..64055eb 100644
+--- a/public/cloud.js
++++ b/public/cloud.js
+@@ -32,13 +32,32 @@
+   async function download(filename,data){const blob=data instanceof Blob?data:new Blob([data],{type:filename.endsWith('.json')?'application/json':'application/pdf'});const f=new File([blob],filename,{type:blob.type});if(navigator.canShare?.({files:[f]})&&navigator.maxTouchPoints>0){try{await navigator.share({files:[f]});return;}catch(e){if(e.name==='AbortError')throw {code:'declined'};}}const objectURL=URL.createObjectURL(blob);sheet('備份已準備完成','<p>備份包含私人資料及照片，請下載並保存在自己的安全空間。</p><a class="btn" id="cloud-download" download="'+esc(filename)+'" href="'+objectURL+'">下載 '+esc(filename)+'</a>');document.getElementById('cloud-close').onclick=()=>{document.getElementById('cloud-dialog').hidden=true;URL.revokeObjectURL(objectURL);};}
+   window.__tripLocal={urlOf:id=>urls.get(id)||'',fullExport,backup:async()=> (await fullExport()).local,restore:async local=>{for(const [id,uri]of Object.entries(local.assets||{})){if(blobs.has(id)||!/^[0-9a-f]{1,64}$/.test(id)||typeof uri!=='string'||!uri.startsWith('data:'))continue;const b=await(await fetch(uri)).blob();await putAsset(id,b);}for(const [p,v]of Object.entries(local.docs||{}))if(/^(notes|data\/users)\/[A-Za-z0-9_~:@+./-]+$/.test(p)&&!p.includes('..'))await write(p,v);}};
+   async function putAsset(id,b){if(b.size>20*1024*1024)throw new Error('單個照片或附件需小於 20 MB。');await repo.asset(id,b);blobs.set(id,b);if(urls.has(id))URL.revokeObjectURL(urls.get(id));urls.set(id,URL.createObjectURL(b));broadcast('assets');schedule();return {id,url:urls.get(id),sizeBytes:b.size,contentType:b.type};}
+-  let controller=new AbortController();
+-  async function call(path,init={}){const r=await fetch('/api/journal/'+path,{...init,signal:controller.signal,headers:{...(init.body&&!(init.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...init.headers},cache:'no-store'});if(!r.ok){let v;try{v=await r.json();}catch{}const e=new Error(v?.error||'網路或登入暫時無法使用。');e.status=r.status;throw e;}return r;}
++  let controller=new AbortController(),fetchBounded,offlineTools,shellReady=false,shellPromise,shellError='';
++  async function call(path,init={}){const r=await fetchBounded('/api/journal/'+path,{...init,signal:controller.signal,headers:{...(init.body&&!(init.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...init.headers},cache:'no-store'});if(!r.ok){let v;try{v=await r.json();}catch{}const e=new Error(v?.error||'網路或登入暫時無法使用。');e.status=r.status;throw e;}return r;}
+   const api={session:async()=>{const r=await(await call('session')).json();if(r.userId!==identity.userId){const e=new Error('登入身分已變更，請重新開啟。');e.status=401;throw e;}},push:async op=>(await call('push',{method:'POST',body:JSON.stringify(op)})).json(),document:async p=>(await call('document?path='+encodeURIComponent(p))).json(),changes:async after=>(await call('changes?after='+after)).json(),assets:async()=>(await(await call('assets')).json()).assets,assetUpload:async(id,b)=>call('assets/'+id,{method:b?'PUT':'DELETE',...(b?{body:b,headers:{'Content-Type':b.type||'application/octet-stream'}}:{})}),assetDownload:async a=>{const b=await(await call('assets/'+a.id)).blob(),digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await b.arrayBuffer())),x=>x.toString(16).padStart(2,'0')).join('');if(digest!==a.sha)throw new Error('照片校驗失敗，請稍後再同步。');return new Blob([b],{type:a.mime});}};
+   let identity;
+-  function status(s){lastStatus=s;const text=s.phase==='synced'?'已同步・'+new Date(s.at).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'}):s.phase==='syncing'?'同步中…':s.phase==='conflict'?'有 '+s.conflicts+' 筆衝突待處理':s.phase==='locked'?'需要重新登入':(s.phase==='offline'?'離線・':'已存裝置・')+'待同步 '+s.pending+' 筆';document.getElementById('cloud-state').textContent=text;document.getElementById('cloud-message').textContent=s.message||'';document.getElementById('cloud-conflicts').hidden=!s.conflicts;document.getElementById('cloud-conflicts').textContent='處理衝突 '+s.conflicts+' 筆';if(s.phase==='locked')lock(s.message);}
++  function status(s){lastStatus=s;const text=s.phase==='synced'?'已同步・'+new Date(s.at).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'}):s.phase==='syncing'?'同步中…':s.phase==='conflict'?'有 '+s.conflicts+' 筆衝突待處理':s.phase==='locked'?'需要重新登入':(s.phase==='offline'?'離線・':'已存裝置・')+'待同步 '+s.pending+' 筆';document.getElementById('cloud-state').textContent=text;document.getElementById('cloud-message').textContent=s.phase==='offline'?'目前無法連線，修改先保存在此裝置，恢復網路後會同步。':s.message||'';document.getElementById('cloud-conflicts').hidden=!s.conflicts;document.getElementById('cloud-conflicts').textContent='處理衝突 '+s.conflicts+' 筆';if(s.phase==='locked')lock(s.message);}
+   async function sync(){if(!engine||document.querySelector('.scrim:not([hidden])'))return;if(engine.flight)return engine.flight;if(navigator.locks)await navigator.locks.request('trip-sync-'+repo.name,{ifAvailable:true},async lock=>{if(lock)await engine.sync();});else await engine.sync();}
+-  function lock(message){controller.abort();localStorage.removeItem('journal-offline-user');document.getElementById('cloud-cover').hidden=false;document.getElementById('cloud-cover').innerHTML='<h2>私人旅行日誌</h2><p>'+esc(message||'請先用 ChatGPT 登入，再開啟你的旅行資料。')+'</p><a class="btn" href="/signin-with-chatgpt?return_to=%2Ftrip.html" target="_top">使用 ChatGPT 登入</a><p>原本的裝置資料保留，登入後可繼續同步。</p>';}
++  function lock(message){controller.abort();localStorage.removeItem('journal-offline-user');const trust=document.getElementById('cloud-trust');if(trust)trust.checked=false;document.getElementById('cloud-cover').hidden=false;document.getElementById('cloud-cover').innerHTML='<h2>私人旅行日誌</h2><p>'+esc(message||'請先用 ChatGPT 登入，再開啟你的旅行資料。')+'</p><a class="btn" href="/signin-with-chatgpt?return_to=%2Ftrip" target="_top">使用 ChatGPT 登入</a><p>首次在這個主畫面 App 使用時，請先連網登入，再按「準備離線使用」。Safari 分頁與主畫面 App 可能使用不同的資料空間，需各自準備。</p><p>原本的裝置資料保留，登入後可繼續同步。</p><button class="btn ghost" onclick="location.reload()">已恢復網路，重新開啟</button>';}
++  function offlineStatus(){
++    const state=document.getElementById('cloud-offline-state'),button=document.getElementById('cloud-offline-prepare');if(!state)return;
++    const trusted=!!offlineTools?.trustedIdentity(localStorage),dataReady=!!repo&&docs.has('meta/config');
++    state.textContent=shellError?'離線尚未準備完成：'+shellError:!shellReady?'正在下載離線啟動畫面…':!dataReady?'離線畫面已下載，等待載入你的旅程。':trusted?'可離線開啟・已準備本機行程與記帳':'尚未啟用離線開啟；這是自己的裝置時，請按「準備離線使用」。';
++    button.disabled=!dataReady;button.textContent=trusted&&shellReady?'重新檢查離線準備':'準備離線使用';
++  }
++  function prepareShell(){
++    shellError='';shellReady=false;offlineStatus();
++    shellPromise=offlineTools.registerOfflineShell().then(result=>{shellReady=true;offlineStatus();return result;}).catch(error=>{shellError=/[\u3400-\u9fff]/.test(error.message)?error.message:'離線畫面下載失敗，請保持連網後重試。';offlineStatus();return null;});
++    return shellPromise;
++  }
++  async function prepareOffline(){
++    const button=document.getElementById('cloud-offline-prepare');button.disabled=true;
++    try{
++      if(!repo||!docs.has('meta/config'))throw new Error('請先連網載入自己的旅程。');
++      if(!(await prepareShell()))return;
++      localStorage.setItem('journal-offline-user',JSON.stringify(identity));document.getElementById('cloud-trust').checked=true;
++    }catch(error){shellError=error.message;}finally{offlineStatus();}
++  }
+   function sheet(title,html){const box=document.getElementById('cloud-dialog');box.innerHTML='<div class="sheet"><h2>'+esc(title)+'</h2>'+html+'<button class="btn ghost" id="cloud-close" type="button">關閉</button></div>';box.hidden=false;document.getElementById('cloud-close').onclick=()=>box.hidden=true;}
+   async function conflicts(){const rows=await repo.all('conflicts');sheet('同一筆資料有兩個版本',rows.map(([p,c],i)=>'<section class="box"><h3>'+esc(p)+'</h3><p>兩份版本都會保留在完整備份紀錄中。</p><details><summary>此裝置版本</summary><pre>'+esc(JSON.stringify(c.local,null,2))+'</pre></details><details><summary>雲端版本</summary><pre>'+esc(JSON.stringify(c.remote.value,null,2))+'</pre></details><button class="btn" data-resolve="'+i+'" data-choice="local">保留此裝置版本</button><button class="btn ghost" data-resolve="'+i+'" data-choice="remote">改用雲端版本</button></section>').join('')||'<p>目前沒有衝突。</p>');for(const b of document.querySelectorAll('[data-resolve]'))b.onclick=async()=>{await repo.resolve(rows[+b.dataset.resolve][0],b.dataset.choice);await changed(rows[+b.dataset.resolve][0]);broadcast(rows[+b.dataset.resolve][0]);await conflicts();schedule();};}
+   async function share(){await sync();const count=await engine.counts();if(lastStatus.phase!=='synced'||count.pending||count.conflicts){sheet('先完成同步','<p>分享前需連網完成同步，並處理衝突，朋友才會看到正確的行程。</p>');return;}
+@@ -53,23 +72,30 @@
+     for(const b of document.querySelectorAll('[data-gpt-undo]'))b.onclick=async()=>{try{const p=await(await call('collaboration',{method:'POST',body:JSON.stringify({action:'prepare_undo_trip_update',args:{update_id:rows[+b.dataset.gptUndo].id}})})).json();sheet('確認還原','<p>'+esc(p.summary)+'</p><p>會還原 '+p.changes.length+' 筆；後續已有其他修改時會停止，不會蓋掉新紀錄。</p>'+p.changes.map(c=>'<details><summary>'+esc(c.path)+'</summary><pre>'+esc(JSON.stringify(c.after,null,2))+'</pre></details>').join('')+'<button class="btn" id="gpt-undo-confirm">確認還原</button>');document.getElementById('gpt-undo-confirm').onclick=async()=>{try{await call('collaboration',{method:'POST',body:JSON.stringify({action:'commit_trip_update',args:{proposal_id:p.proposal_id,confirmation:'已定案'}})});await sync();await coedit();}catch(e){sheet('未能還原','<p>'+esc(e.message)+'</p>');}};}catch(e){sheet('未能準備還原','<p>'+esc(e.message)+'</p>');}};
+   }
+   async function start(){
+-    const style=document.createElement('style');style.textContent='.cloud-bar{max-width:760px;margin:12px auto;padding:12px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.cloud-bar button{font:inherit;border-radius:9px;padding:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--fg)}#cloud-message{flex-basis:100%;color:var(--muted)}#cloud-message:empty{display:none}#cloud-cover{position:fixed;inset:0;z-index:200;background:var(--bg);padding:60px 24px;text-align:center}#cloud-dialog{position:fixed;inset:0;z-index:150;background:#0009;display:flex;align-items:flex-end;justify-content:center}#cloud-dialog .sheet{position:relative;max-height:90vh;overflow:auto;background:var(--surface);width:min(100%,720px);padding:24px;border-radius:20px 20px 0 0}#cloud-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.cloud-bar .trust{font-size:11px}';document.head.append(style);
+-    const bar=document.createElement('aside');bar.className='cloud-bar';bar.innerHTML='<span id="cloud-state" role="status">正在連接私人雲端…</span><button id="cloud-now">同步</button><button id="cloud-coedit">GPT 協作</button><button id="cloud-share">分享行程</button><button id="cloud-conflicts" hidden>處理衝突</button><button id="cloud-backup">完整備份</button><button id="cloud-signout">登出</button><label class="trust"><input id="cloud-trust" type="checkbox">信任此裝置，可離線開啟私人資料（共用裝置勿勾）</label><p id="cloud-message"></p>';document.querySelector('.wrap').prepend(bar);for(const b of bar.querySelectorAll('button'))b.disabled=true;
+-    const guide=document.createElement('details');guide.className='cloud-bar';guide.innerHTML='<summary>第一次使用／把原手機資料搬過來</summary><p>手機、電腦、平板請用同一個 ChatGPT 帳號登入。修改先存於目前裝置，連網後同步；請確認上方顯示「已同步」。</p><p>原手機離線版的內容不會自動搬移。先在原本網址的「花費」匯出內容檔，再到雲端版的「花費」匯入一次。匯入會取代雲端目前行程，請先完整備份。</p><p>出發前勾選「信任此裝置」並完成一次同步，才能離線重新開啟。朋友請使用「分享行程」產生的唯讀連結。</p>';bar.after(guide);
++    const style=document.createElement('style');style.textContent='.cloud-bar{max-width:760px;margin:12px auto;padding:12px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.cloud-bar button{font:inherit;border-radius:9px;padding:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--fg)}#cloud-message{flex-basis:100%;color:var(--muted)}#cloud-message:empty{display:none}#cloud-cover{position:fixed;inset:0;z-index:200;background:var(--bg);padding:60px 24px;text-align:center}#cloud-dialog{position:fixed;inset:0;z-index:150;background:#0009;display:flex;align-items:flex-end;justify-content:center}#cloud-dialog .sheet{position:relative;max-height:90vh;overflow:auto;background:var(--surface);width:min(100%,720px);padding:24px;border-radius:20px 20px 0 0}#cloud-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.cloud-bar .trust{font-size:11px}#cloud-offline-state{flex-basis:100%;line-height:1.6}';document.head.append(style);
++    const bar=document.createElement('aside');bar.className='cloud-bar';bar.innerHTML='<span id="cloud-state" role="status">正在讀取裝置上的日誌…</span><button id="cloud-now">同步</button><button id="cloud-coedit">GPT 協作</button><button id="cloud-share">分享行程</button><button id="cloud-conflicts" hidden>處理衝突</button><button id="cloud-backup">完整備份</button><button id="cloud-signout">登出</button><label class="trust"><input id="cloud-trust" type="checkbox">信任此裝置，可離線開啟私人資料（共用裝置勿勾）</label><span id="cloud-offline-state" role="status">正在檢查離線準備…</span><button id="cloud-offline-prepare">準備離線使用</button><p id="cloud-message"></p>';document.querySelector('.wrap').prepend(bar);for(const b of bar.querySelectorAll('button'))b.disabled=true;
++    const guide=document.createElement('details');guide.className='cloud-bar';guide.innerHTML='<summary>第一次使用／把原手機資料搬過來</summary><p>手機、電腦、平板請用同一個 ChatGPT 帳號登入。修改先存於目前裝置，連網後同步；請確認上方顯示「已同步」。</p><p>原手機離線版的內容不會自動搬移。先在原本網址的「花費」匯出內容檔，再到雲端版的「花費」匯入一次。匯入會取代雲端目前行程，請先完整備份。</p><p>加入主畫面後，請從主畫面圖示連網開啟並登入，再按「準備離線使用」，等到顯示「可離線開啟」。Safari 分頁與主畫面 App 可能使用不同的資料空間，需各自準備。照片與外部地圖以已下載內容為準。朋友請使用「分享行程」產生的唯讀連結。</p><p>App 圖示已設定為深綠底、橘色山與太陽；iPhone 使用 Apple Touch Icon，Android 使用安裝資訊中的圖示。圖示或名稱更新後，原本的主畫面圖示可能仍保留舊外觀；請先完整備份，再重新加入主畫面。</p>';bar.after(guide);
+     const cover=document.createElement('div');cover.id='cloud-cover';cover.hidden=true;document.body.append(cover);const dialog=document.createElement('div');dialog.id='cloud-dialog';dialog.hidden=true;document.body.append(dialog);
+-    try{identity=await(await call('session')).json();}catch(e){const cached=localStorage.getItem('journal-offline-user');if(!e.status&&cached)identity=JSON.parse(cached);else{lock(e.message);return new Promise(()=>{});}}
++    offlineTools=await import('/offline-core.js');fetchBounded=offlineTools.fetchBounded;
++    // Register the public shell before authentication/sync; failures remain visible.
++    prepareShell();
++    try{identity=(await offlineTools.startupIdentity(localStorage,()=>call('session').then(r=>r.json()))).identity;}catch(e){lock(e.status?e.message:'目前沒有可離線開啟的登入資料。請先連網，在這個主畫面 App 登入並完成離線準備。');return new Promise(()=>{});}
+     const {CloudStore,SyncEngine}=await import('/sync-core.js');repo=new CloudStore('journal-cloud-v1-'+identity.userId);docs=new Map(await repo.all('docs'));for(const [p,r]of await repo.all('revisions'))revisions.set(p,r);for(const [id,b]of await repo.all('assets')){blobs.set(id,b);urls.set(id,URL.createObjectURL(b));}
+     engine=new SyncEngine(repo,api,{changed,status});channel=typeof BroadcastChannel==='function'?new BroadcastChannel(repo.name):null;if(channel)channel.onmessage=e=>{changed(e.data.path);schedule();};
+-    const trusted=document.getElementById('cloud-trust');trusted.checked=!!localStorage.getItem('journal-offline-user');trusted.onchange=()=>{if(trusted.checked)localStorage.setItem('journal-offline-user',JSON.stringify(identity));else localStorage.removeItem('journal-offline-user');};
++    const trusted=document.getElementById('cloud-trust');trusted.checked=!!offlineTools.trustedIdentity(localStorage);trusted.onchange=()=>{if(trusted.checked){trusted.checked=false;prepareOffline();}else{localStorage.removeItem('journal-offline-user');offlineStatus();}};
++    document.getElementById('cloud-offline-prepare').onclick=prepareOffline;
+     document.getElementById('cloud-now').onclick=sync;document.getElementById('cloud-coedit').onclick=()=>coedit().catch(e=>sheet('GPT 協作',esc(e.message)));document.getElementById('cloud-share').onclick=()=>share().catch(e=>sheet('暫時無法分享','<p>'+esc(e.message)+'</p>'));document.getElementById('cloud-conflicts').onclick=conflicts;
+     document.getElementById('cloud-backup').onclick=async()=>{const b=document.getElementById('cloud-backup');b.disabled=true;b.textContent='準備備份…';try{const pack=await fullExport();await download('journal-backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(pack,null,1));const link=document.getElementById('cloud-download');if(link){const summary=document.createElement('p');summary.textContent='行程 '+Object.keys(pack.data.items).length+' 筆／照片 '+Object.keys(pack.local.assets).length+' 張／待同步 '+pack.cloud.queue.length+' 筆／衝突紀錄 '+pack.cloud.history.length+' 筆';link.before(summary);}}catch(e){sheet('備份暫時無法完成','<p>'+esc(e.message)+'</p>');}finally{b.disabled=false;b.textContent='完整備份';}};
+     document.getElementById('cloud-signout').onclick=()=>{controller.abort();localStorage.removeItem('journal-offline-user');location.assign('/signout-with-chatgpt?return_to=%2F');};
+     window.addEventListener('online',sync);document.addEventListener('visibilitychange',()=>{if(!document.hidden)sync();});setInterval(()=>{if(!document.hidden)sync();},12000);
+-    // Initial pull completes before the legacy UI can seed packing defaults or edit a stale document.
+-    await sync();
++    // Cached, trusted journals open immediately; cloud authorization and sync run afterward.
++    // A first-ever load still awaits a real pull before the UI may seed any defaults.
++    const hadLocalData=docs.size>0;
++    if(!hadLocalData)await sync();
+     if (!docs.size && !["synced","pending","conflict"].includes(lastStatus.phase)) { lock("尚未載入雲端資料，請連網後重新開啟；不會以空白行程覆蓋雲端。"); return new Promise(()=>{}); }
+     for(const b of bar.querySelectorAll('button'))b.disabled=false;
+-    if (navigator.serviceWorker) navigator.serviceWorker.register("/sw.js").catch(()=>{});
++    offlineStatus();
++    if(hadLocalData){status({phase:'pending',...await engine.counts(),message:'已讀取裝置資料；正在背景檢查雲端連線。'});setTimeout(sync,0);}
+     const assets={upload:async b=>putAsset(Array.from(crypto.getRandomValues(new Uint8Array(16)),x=>x.toString(16).padStart(2,'0')).join(''),b),list:async()=>({assets:[...blobs].map(([id,b])=>({id,url:urls.get(id),sizeBytes:b.size,contentType:b.type})),usage:{}}),delete:async id=>{await repo.asset(id,null);blobs.delete(id);if(urls.has(id))URL.revokeObjectURL(urls.get(id));urls.delete(id);broadcast('assets');schedule();}};
+     return {db:{doc,collection,writeMany},user:{isOwner:async()=>true,canEdit:async()=>true,can:async()=>true,id:async()=>'me',me:async()=>({id:'me',name:identity.displayName}),profiles:async()=>({})},assets,downloads:{save:async({filename,data})=>download(filename,data)}};
+   }
+diff --git a/public/manifest.webmanifest b/public/manifest.webmanifest
+index 726af25..07ee47e 100644
+--- a/public/manifest.webmanifest
++++ b/public/manifest.webmanifest
+@@ -1,9 +1,9 @@
+ {
+-  "name": "Wandering Journal",
+-  "short_name": "Journal",
+-  "description": "Private travel journal with cloud sync and offline recording.",
+-  "start_url": "trip.html",
+-  "scope": "./",
++  "name": "流浪者手記｜Lun 的慢旅行計畫",
++  "short_name": "流浪者手記",
++  "description": "私人旅行行程、日記與花費，支援雲端同步與離線記錄。",
++  "start_url": "/trip",
++  "scope": "/",
+   "display": "standalone",
+   "background_color": "#16201c",
+   "theme_color": "#16201c",
+@@ -21,5 +21,6 @@
+       "type": "image/png",
+       "purpose": "any maskable"
+     }
+-  ]
++  ],
++  "id": "/trip.html"
+ }
+diff --git a/public/offline-core.js b/public/offline-core.js
+new file mode 100644
+index 0000000..5656968
+--- /dev/null
++++ b/public/offline-core.js
+@@ -0,0 +1,48 @@
++export function trustedIdentity(storage){
++  try{const value=JSON.parse(storage.getItem('journal-offline-user'));return value&&typeof value.userId==='string'&&value.userId.length?value:null;}catch{return null;}
++}
++export async function startupIdentity(storage,loadSession){
++  // This selects an existing local database only; every cloud API still verifies the live session.
++  const cached=trustedIdentity(storage);return cached?{identity:cached,fromCache:true}:{identity:await loadSession(),fromCache:false};
++}
++export function withDeadline(promise,ms,message){
++  let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(message)),ms);})]).finally(()=>clearTimeout(timer));
++}
++export async function fetchBounded(input,init={},fetcher=fetch,ms=8000){
++  const controller=new AbortController(),abort=()=>controller.abort(init.signal?.reason);
++  if(init.signal?.aborted)abort();else init.signal?.addEventListener('abort',abort,{once:true});
++  let timer;
++  try{return await Promise.race([fetcher(input,{...init,signal:controller.signal}),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('連線逾時，已保留裝置上的資料，稍後可重新同步。'));},ms);})]);}
++  finally{clearTimeout(timer);init.signal?.removeEventListener('abort',abort);}
++}
++async function workerStatus(worker,ms){
++  const channel=new MessageChannel();
++  try{return await withDeadline(new Promise((resolve,reject)=>{
++    channel.port1.onmessage=event=>resolve(event.data);
++    channel.port1.onmessageerror=()=>reject(new Error('無法檢查離線畫面，請重試。'));
++    worker.postMessage({type:'JOURNAL_OFFLINE_STATUS'},[channel.port2]);
++  }),ms,'離線程式需要更新，請保持連網並重新開啟一次。');}finally{channel.port1.close();}
++}
++export async function registerOfflineShell(nav=navigator){
++  if(!nav.serviceWorker)throw new Error('這個瀏覽器無法準備離線畫面，請使用 Safari 或 Chrome 的一般模式。');
++  const existing=await nav.serviceWorker.getRegistration?.('/');
++  if(existing?.active){
++    const saved=await workerStatus(existing.active,800).catch(()=>null);
++    if(saved?.coreReady){
++      // Checking for updates must not delay an already prepared offline launch.
++      nav.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'}).then(reg=>reg.update?.()).catch(()=>{});
++      return saved;
++    }
++  }
++  const registration=await withDeadline(nav.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'}),15000,'下載離線程式逾時，請保持連網後重試。');
++  if(registration.update)await withDeadline(registration.update(),15000,'更新離線程式逾時，請保持連網後重試。');
++  const worker=registration.installing||registration.waiting;
++  if(worker&&worker.state!=='activated')await withDeadline(new Promise((resolve,reject)=>{
++    const check=()=>{if(worker.state==='activated'){worker.removeEventListener('statechange',check);resolve();}else if(worker.state==='redundant'){worker.removeEventListener('statechange',check);reject(new Error('離線程式下載失敗，請連網後重試。'));}};
++    worker.addEventListener('statechange',check);check();
++  }),20000,'離線畫面尚未下載完成，請保持連網後重試。');
++  const ready=await withDeadline(nav.serviceWorker.ready,20000,'離線畫面尚未下載完成，請保持連網後重試。');
++  const result=await workerStatus(ready.active,5000);
++  if(!result?.coreReady)throw new Error('離線畫面不完整，請連網後重試。');
++  return result;
++}
+diff --git a/public/sw.js b/public/sw.js
+index 1bd326c..bc758fe 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,6 +1,54 @@
+-const VERSION='journal-sites-shell-v4';
+-const SHELL=['/trip.html','/cloud.js','/sync-core.js','/manifest.webmanifest','/icon-192.png','/icon-512.png','/vendor/leaflet.js','/vendor/html2canvas.min.js','/vendor/jspdf.umd.min.js'];
+-self.addEventListener('install',e=>e.waitUntil(caches.open(VERSION).then(c=>Promise.all(SHELL.map(p=>c.add(p))))));
+-self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('journal-sites-shell-')&&k!==VERSION).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+-self.addEventListener('fetch',e=>{const u=new URL(e.request.url),path=(u.pathname==='/'||u.pathname==='/trip')?'/trip.html':u.pathname;if(e.request.method!=='GET'||u.origin!==location.origin||!SHELL.includes(path))return;
+-e.respondWith(fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();e.waitUntil(caches.open(VERSION).then(c=>c.put(path,copy)));}return r;}).catch(()=>caches.match(path).then(r=>r||Response.error())));});
++const VERSION='journal-sites-shell-v6';
++const CORE=['/trip','/cloud.js','/sync-core.js','/offline-core.js'];
++const OPTIONAL=['/manifest.webmanifest','/icon-192.png','/icon-512.png','/vendor/leaflet.js','/vendor/html2canvas.min.js','/vendor/jspdf.umd.min.js'];
++const ASSETS=[...CORE.slice(1),...OPTIONAL];
++const JOURNAL_ROUTES=new Set(['/','/trip','/trip/','/trip.html']);
++async function download(path){
++  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
++  try{
++    const response=await fetch(new Request(path,{cache:'reload',signal:controller.signal}));
++    if(!response.ok)throw new Error('無法下載 '+path);
++    const type=response.headers.get('content-type')||'';
++    if(path==='/trip'){
++      const html=await response.text();
++      if(!type.includes('text/html')||!html.includes('id="trip-title"'))throw new Error('離線畫面不是日誌頁面。');
++      // Canonical .html redirects must not produce redirected navigation responses.
++      const headers=new Headers(response.headers);headers.delete('content-encoding');headers.delete('content-length');
++      return new Response(html,{status:200,headers});
++    }
++    if(path.endsWith('.js')&&!/javascript|ecmascript/.test(type))throw new Error('無法取得日誌程式 '+path);
++    return response;
++  }finally{clearTimeout(timer);}
++}
++self.addEventListener('install',event=>event.waitUntil((async()=>{
++  const cache=await caches.open(VERSION);
++  // Only a complete core may activate. Optional map/PDF/icon failures cannot block it.
++  await Promise.all(CORE.map(async path=>cache.put(path,await download(path))));
++  await self.skipWaiting();
++})()));
++self.addEventListener('activate',event=>event.waitUntil((async()=>{
++  for(const key of await caches.keys())if(key.startsWith('journal-sites-shell-')&&key!==VERSION)await caches.delete(key);
++  await self.clients.claim();
++  const cache=await caches.open(VERSION);
++  await Promise.allSettled(OPTIONAL.map(async path=>cache.put(path,await download(path))));
++})()));
++self.addEventListener('message',event=>{
++  if(event.data?.type!=='JOURNAL_OFFLINE_STATUS'||!event.ports?.[0])return;
++  event.waitUntil((async()=>{
++    const cache=await caches.open(VERSION),present=await Promise.all(CORE.map(path=>cache.match(path)));
++    event.ports[0].postMessage({version:VERSION,coreReady:present.every(Boolean)});
++  })());
++});
++self.addEventListener('fetch',event=>{
++  const url=new URL(event.request.url);
++  if(event.request.method!=='GET'||url.origin!==location.origin)return;
++  const path=JOURNAL_ROUTES.has(url.pathname)?'/trip':url.pathname;
++  if(path!=='/trip'&&!ASSETS.includes(path))return; // Never cache auth, APIs, shares or private files.
++  event.respondWith((async()=>{
++    const cache=await caches.open(VERSION),saved=await cache.match(path);
++    // A prepared launch does not wait on a dead/slow connection or a server redirect.
++    if(saved)return saved;
++    try{const response=await download(path);await cache.put(path,response.clone());return response;}
++    catch{return Response.error();}
++  })());
++});
+diff --git a/public/trip.html b/public/trip.html
+index 97b6abf..20ed27c 100644
+--- a/public/trip.html
++++ b/public/trip.html
+@@ -1,8 +1,8 @@
+-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+-<title>旅行行程</title>
+-<meta name="claude:viewport-fit-sides" content="cover"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#16201c">
++<!doctype html><html lang="zh-Hant"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
++<title>流浪者手記</title>
++<meta name="claude:viewport-fit-sides" content="cover"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png"><link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png"><meta name="apple-mobile-web-app-title" content="流浪者手記"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#16201c">
+ <link rel="preconnect" href="https://fonts.googleapis.com">
+-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
++<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+ <style>
+ /* Layout: one phone-width column; day strip on top, timeline of cards, floating bottom nav with a central add button. */
+ :root {
+@@ -586,6 +586,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+ #actual-summary { overflow-wrap: anywhere; }
+ </style>
+ 
++</head><body>
+ <div class="wrap">
+   <header class="top">
+     <h1 id="trip-title"></h1>
+diff --git a/tests/cloud.test.mjs b/tests/cloud.test.mjs
+index 84799a3..f1b5730 100644
+--- a/tests/cloud.test.mjs
++++ b/tests/cloud.test.mjs
+@@ -24,7 +24,7 @@ test('private assets require owner and immutable IDs cannot overwrite another ph
+ 
+ test('an editor opened before a background pull keeps its original revision and detects stale submission',async()=>{const e=env(),a=initMemory(),b=initMemory(),ea=new SyncEngine(a,e.api),eb=new SyncEngine(b,e.api);await a.write('items/a',{title:'initial'});await ea.sync();await eb.sync();const openedRevision=await b.get('revisions','items/a');await a.write('items/a',{title:'device A'});await ea.sync();await eb.sync();await b.write('items/a',{title:'stale form'},openedRevision);await eb.sync();assert.equal((await b.get('conflicts','items/a')).remote.value.title,'device A');assert.equal((await e.api.document('items/a')).value.title,'device A');});
+ 
+-test('offline shell covers the production clean URL without caching private APIs',async()=>{const {runInNewContext}=await import('node:vm');const listeners={},puts=[],source=await readFile(new URL('../public/sw.js',import.meta.url),'utf8'),cached=new Response('offline shell');runInNewContext(source,{URL,Response,Promise,location:{origin:'https://journal.test'},self:{addEventListener:(k,f)=>listeners[k]=f},caches:{match:async key=>key==='/trip.html'?cached:null,open:async()=>({put:(...args)=>puts.push(args)})},fetch:async()=>{throw new Error('offline');}});let result;listeners.fetch({request:new Request('https://journal.test/trip'),respondWith:p=>result=p});assert.equal(await(await result).text(),'offline shell');result=undefined;listeners.fetch({request:new Request('https://journal.test/api/journal/session'),respondWith:p=>result=p});assert.equal(result,undefined);});
++test('offline shell covers the production clean URL without caching private APIs',async()=>{const {runInNewContext}=await import('node:vm');const listeners={},puts=[],source=await readFile(new URL('../public/sw.js',import.meta.url),'utf8'),cached=new Response('offline shell');runInNewContext(source,{URL,Response,Promise,location:{origin:'https://journal.test'},self:{addEventListener:(k,f)=>listeners[k]=f},caches:{open:async()=>({match:async key=>key==='/trip'?cached.clone():null,put:(...args)=>puts.push(args)})},fetch:async()=>{throw new Error('offline');}});let result;listeners.fetch({request:new Request('https://journal.test/trip'),respondWith:p=>result=p});assert.equal(await(await result).text(),'offline shell');result=undefined;listeners.fetch({request:new Request('https://journal.test/api/journal/session'),respondWith:p=>result=p});assert.equal(result,undefined);});
+ 
+ test('share and manual sync callers wait for the same in-flight synchronization',async()=>{const e=env(),s=initMemory();await s.write('items/a',{title:'shared'});let release;const gate=new Promise(r=>release=r);const engine=new SyncEngine(s,{...e.api,session:async()=>gate});const first=engine.sync(),second=engine.sync();assert.equal(first,second);release();await second;assert.equal((await engine.counts()).pending,0);assert.equal((await e.api.document('items/a')).revision,1);});
+ 
+diff --git a/tests/offline.test.mjs b/tests/offline.test.mjs
+new file mode 100644
+index 0000000..d2f7b16
+--- /dev/null
++++ b/tests/offline.test.mjs
+@@ -0,0 +1,70 @@
++import {test} from 'node:test';
++import assert from 'node:assert/strict';
++import {readFile} from 'node:fs/promises';
++import {runInNewContext} from 'node:vm';
++import {trustedIdentity,startupIdentity,fetchBounded,registerOfflineShell} from '../public/offline-core.js';
++const sw=await readFile(new URL('../public/sw.js',import.meta.url),'utf8');
++const origin='https://journal.test',core=['/trip','/cloud.js','/sync-core.js','/offline-core.js'];
++function harness({fail=[],login=false}={}){
++ const handlers={},stores=new Map(),calls=[];let skipped=0,claimed=0;
++ const cache=name=>{if(!stores.has(name))stores.set(name,new Map());const m=stores.get(name);return {match:async p=>m.get(p)?.clone(),put:async(p,r)=>m.set(p,r.clone())};};
++ const network=async request=>{const path=new URL(request.url).pathname;calls.push(path);if(fail.includes(path))throw new Error('offline');const r=new Response(path==='/trip'?(login?'<html>Sign in</html>':'<html><h1 id="trip-title">Diary</h1></html>'):'export const cached=true;',{headers:{'content-type':path==='/trip'?'text/html':'text/javascript'}});if(path==='/trip')Object.defineProperty(r,'redirected',{value:true});return r;};
++ class SWRequest extends Request{constructor(path,init){super(new URL(path,origin),init);}}
++ runInNewContext(sw,{URL,Request:SWRequest,Response,Headers,AbortController,setTimeout,clearTimeout,location:{origin},fetch:network,caches:{open:async n=>cache(n),keys:async()=>[...stores.keys()],delete:async n=>stores.delete(n)},self:{addEventListener:(name,fn)=>handlers[name]=fn,skipWaiting:async()=>{skipped++;},clients:{claim:async()=>{claimed++;}}}});
++ const event=async type=>{let work;handlers[type]({waitUntil:p=>work=p});await work;};
++ const request=async path=>{let work;handlers.fetch({request:new Request(new URL(path,origin)),respondWith:p=>work=p});return work?await work:undefined;};
++ return {event,request,calls,stores,handlers,get skipped(){return skipped;},get claimed(){return claimed;}};
++}
++test('cold offline launch works for every installed start URL without any network request',async()=>{
++ const h=harness();await h.event('install');await h.event('activate');h.calls.length=0;
++ for(const path of ['/','/trip','/trip/','/trip.html','/trip?source=pwa','/trip.html?installed=1']){
++  const r=await h.request(path);assert.match(await r.text(),/trip-title/);assert.equal(r.redirected,false);
++ }
++ for(const path of core.slice(1))assert.match(await(await h.request(path)).text(),/cached/);
++ assert.deepEqual(h.calls,[]);assert.equal(h.skipped,1);assert.equal(h.claimed,1);
++});
++test('missing optional PDF/map assets do not prevent offline shell activation',async()=>{
++ const h=harness({fail:['/vendor/jspdf.umd.min.js','/vendor/leaflet.js','/icon-192.png']});await h.event('install');await h.event('activate');assert.equal(h.skipped,1);assert.match(await(await h.request('/trip')).text(),/trip-title/);
++});
++test('missing core code or redirected login HTML cannot be marked offline ready',async()=>{
++ for(const options of [{fail:['/offline-core.js']},{login:true}]){const h=harness(options);await assert.rejects(h.event('install'));assert.equal(h.skipped,0);}
++});
++test('offline routing excludes all private APIs, authentication, sharing and third party assets',async()=>{
++ const h=harness();for(const path of ['/api/journal/session','/api/journal/changes','/signin-with-chatgpt','/signout-with-chatgpt','/share.html','https://other.test/cloud.js'])assert.equal(await h.request(path),undefined);
++});
++test('worker reports readiness only when every core resource is in the current cache',async()=>{
++ const h=harness();await h.event('install');let reply,work;h.handlers.message({data:{type:'JOURNAL_OFFLINE_STATUS'},ports:[{postMessage:v=>reply=v}],waitUntil:p=>work=p});await work;assert.equal(reply.coreReady,true);h.stores.values().next().value.delete('/cloud.js');h.handlers.message({data:{type:'JOURNAL_OFFLINE_STATUS'},ports:[{postMessage:v=>reply=v}],waitUntil:p=>work=p});await work;assert.equal(reply.coreReady,false);
++});
++test('activation retires only old public shell caches',async()=>{
++ const h=harness();h.stores.set('journal-sites-shell-v4',new Map());h.stores.set('unrelated-private-cache',new Map());await h.event('install');await h.event('activate');assert.ok(!h.stores.has('journal-sites-shell-v4'));assert.ok(h.stores.has('unrelated-private-cache'));
++});
++const storage=value=>({getItem:()=>value});
++test('trusted startup returns immediately even while the network never settles',async()=>{
++ let called=0;const cached={userId:'owner-local',displayName:'Me'};const r=await startupIdentity(storage(JSON.stringify(cached)),()=>{called++;return new Promise(()=>{});});assert.deepEqual(r,{identity:cached,fromCache:true});assert.equal(called,0);
++});
++test('fresh installed app requires online identity instead of guessing another local account',async()=>{
++ assert.equal(trustedIdentity(storage('broken')),null);assert.equal(trustedIdentity(storage('{"userId":null}')),null);const r=await startupIdentity(storage(null),async()=>({userId:'verified'}));assert.equal(r.identity.userId,'verified');assert.equal(r.fromCache,false);await assert.rejects(startupIdentity(storage(null),async()=>{throw new Error('offline');}),/offline/);
++});
++test('a stalled request times out even when fetch ignores cancellation',async()=>{
++ await assert.rejects(fetchBounded('/session',{},()=>new Promise(()=>{}),10),/逾時/);
++});
++test('authorization denial stays a denial and signout cancellation reaches requests',async()=>{
++ const r=await fetchBounded('/session',{},async()=>new Response('',{status:401}),100);assert.equal(r.status,401);
++ const c=new AbortController();c.abort();await assert.rejects(fetchBounded('/session',{signal:c.signal},async(_,init)=>{assert.equal(init.signal.aborted,true);throw new Error('aborted');},100),/aborted/);
++});
++test('readiness check verifies the worker rather than just successful registration',async()=>{
++ const active={postMessage:(message,ports)=>{assert.equal(message.type,'JOURNAL_OFFLINE_STATUS');ports[0].postMessage({coreReady:true,version:'v5'});}};const registration={active};const nav={serviceWorker:{register:async(path,options)=>{assert.equal(path,'/sw.js');assert.equal(options.scope,'/');assert.equal(options.updateViaCache,'none');return registration;},ready:Promise.resolve(registration)}};
++ assert.equal((await registerOfflineShell(nav)).coreReady,true);
++ active.postMessage=(_,ports)=>ports[0].postMessage({coreReady:false});await assert.rejects(registerOfflineShell(nav),/不完整/);await assert.rejects(registerOfflineShell({}),/瀏覽器/);
++});
++test('PWA metadata resides in head, uses a canonical launch and retains existing app identity',async()=>{
++ const html=await readFile(new URL('../public/trip.html',import.meta.url),'utf8'),head=html.slice(0,html.indexOf('</head>'));assert.ok(head.includes('rel="apple-touch-icon"'));assert.ok(head.includes('apple-mobile-web-app-title'));assert.ok(head.includes('rel="manifest"'));assert.ok(html.indexOf('</head>')<html.indexOf('<body>'));
++ const manifest=JSON.parse(await readFile(new URL('../public/manifest.webmanifest',import.meta.url),'utf8'));assert.equal(manifest.start_url,'/trip');assert.equal(manifest.id,'/trip.html');assert.equal(manifest.scope,'/');assert.equal(manifest.short_name,'流浪者手記');
++ for(const icon of manifest.icons){const b=await readFile(new URL('../public/'+icon.src,import.meta.url));const n=Number(icon.sizes.split('x')[0]);assert.equal(b.readUInt32BE(16),n);assert.equal(b.readUInt32BE(20),n);}
++});
++
++test('an existing prepared worker remains ready when update checks fail offline',async()=>{
++ const active={postMessage:(_,ports)=>ports[0].postMessage({coreReady:true,version:'v5'})};let checked=0;
++ const nav={serviceWorker:{getRegistration:async()=>({active}),register:async()=>{checked++;throw new Error('offline');}}};
++ assert.equal((await registerOfflineShell(nav)).coreReady,true);assert.equal(checked,1);
++});

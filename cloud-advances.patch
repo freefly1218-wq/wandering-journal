@@ -1,0 +1,496 @@
+diff --git a/docs/advances.md b/docs/advances.md
+new file mode 100644
+index 0000000..d54d73c
+--- /dev/null
++++ b/docs/advances.md
+@@ -0,0 +1,15 @@
++# 代墊與收回代墊
++
++花費的 amt 保留完整付款，ownAmt 是自己負擔的同幣別金額（可填 0；留白代表全額自付）。差額是代墊。個人支出只計 ownAmt，實際台幣帳單保留整筆，在個人統計依份額比例折算；尚未收回也不會把朋友份額當成自己的花費。
++
++收回代墊另存 kind=reimbursement，以 expenseId 指向原花費。只記實際收到的金額、日期及收款方式。現金收款加到現金；轉帳不增加身上現金，收款本身不當收入或花費。可分次收款，畫面顯示代墊、已收、待收。原幣結清需使用原花費幣別；不同幣別的換匯分開記。
++
++例如合成測試的原付款 900、自己 300、收到 600：個人花費為 300，代墊 600 已結清。刷卡不扣現金，朋友現金還款增加現金 600。若原付款用現金，先扣完整 900，再加還款 600。
++
++操作：新增花費 → 輸入整筆付款／付款方式 → 填自己負擔 → 儲存。再新增花費／金流 → 收回代墊 → 選原花費 → 輸入實收金額與收款方式 → 儲存。新收款不要勾選盤點前舊帳。
++
++列表、每日個人花費總計及私人完整版 PDF 使用相同個人支出算法，原付款與收款明細仍保留。朋友分享排除全部財務欄位。JSON moneyVersion 升至 3；新版本可讀舊備份，舊版不能匯入新版備份。舊客戶端／舊離線佇列對代墊資料的修改由服務端拒絕，保留本機與雲端版本供明確處理。
++
++本機表單防止超收、錯幣、刪除有收款的原花費；兩台裝置離線同時收款造成超收時，保留實際現金並顯示超收警示，不靜默刪帳。不同步或外部更新導致找不到原花費時，收款仍保留且顯示缺少連結，不能當成已正確結清。
++
++未自動改分類既有花費、盤點或舊現金增減。GPT 寫入沿用版本核對、原子批次、私人前後紀錄與還原。83 項檢查通過，包含代墊、分次還款、現金與轉帳、離線兩裝置、隱私、備份及舊版寫入保護；另以合成資料進行瀏覽器表單驗證。
+diff --git a/lib/journal-api.mjs b/lib/journal-api.mjs
+index 2fc0556..d9514f9 100644
+--- a/lib/journal-api.mjs
++++ b/lib/journal-api.mjs
+@@ -51,6 +51,11 @@ export async function journalAPI(request,{db,bucket,user,ownerEmail}){
+       if(Number(request.headers.get('content-length')||0)>300000)return json({error:'此筆資料太大。'},413);
+       const op=await request.json();const value=op.deleted?null:JSON.stringify(op.value);
+       if(!pathOK(op.path)||!idOK(op.id)||!Number.isSafeInteger(op.base)||op.base<0||(!op.deleted&&(!op.value||typeof op.value!=='object'||Array.isArray(op.value)))||value?.length>250000)return json({error:'無效同步資料。'},400);
++      if(op.path.startsWith('misc/')&&(request.headers.get('X-Journal-Money-Version')!=='3'||op.moneyVersion!==3)){
++        const saved=await db.prepare('SELECT value,deleted FROM journal_documents WHERE owner=? AND path=?').bind(owner,op.path).first();
++        const old=saved&&!saved.deleted?JSON.parse(saved.value):null;
++        if(op.value?.kind==='reimbursement'||op.value?.ownAmt!=null||old?.kind==='reimbursement'||old?.ownAmt!=null)return json({error:'這筆包含代墊資料，請連網更新並重新開啟 App 後再修改。'},426);
++      }
+       const result=await db.batch([
+         db.prepare('INSERT INTO journal_clocks(owner,value) VALUES(?,0) ON CONFLICT DO NOTHING').bind(owner),
+         db.prepare('INSERT INTO journal_receipts(owner,op,result) VALUES(?,?,NULL) ON CONFLICT DO NOTHING').bind(owner,op.id),
+diff --git a/lib/journal-collaboration.mjs b/lib/journal-collaboration.mjs
+index 482cf9e..f8c313f 100644
+--- a/lib/journal-collaboration.mjs
++++ b/lib/journal-collaboration.mjs
+@@ -23,10 +23,12 @@ export function validateTripDocument(path,v,days=365){
+     if(v.url&&!/^https?:\/\//i.test(v.url))fail('行程連結只接受 http 或 https。');
+     if(v.budget&&!Array.isArray(v.budget))fail('預算必須保留原幣陣列。');for(const b of v.budget||[])if(!object(b)||!money(b.amt,b.cur))fail('行程預算金額或幣別無效。');
+   }else if(path.startsWith('misc/')){
+-    const kind=v.kind||'expense';if(!text(v.label,300)||!['expense','exchange','cashflow'].includes(kind)||!currencies.includes(v.cur)||(v.amt!==null&&v.amt!==undefined&&!money(v.amt,v.cur)))fail('花費名稱、紀錄類型或原幣金額無效。');
++    const kind=v.kind||'expense';if(!text(v.label,300)||!['expense','exchange','cashflow','reimbursement'].includes(kind)||!currencies.includes(v.cur)||(v.amt!==null&&v.amt!==undefined&&!money(v.amt,v.cur)))fail('花費名稱、紀錄類型或原幣金額無效。');
+     if(v.date&&!validDate(v.date))fail('花費日期無效。');
+     if(kind==='exchange'&&(!(v.amt>0)||!money(v.toAmt,v.toCur)||!(v.toAmt>0)||v.cur===v.toCur))fail('換匯須有不同幣別與已確認的實付、實收金額。');
+     if(kind==='cashflow'&&(!(v.amt>0)||!['in','out'].includes(v.direction)))fail('現金增減須有金額及方向。');
++    if(v.ownAmt!=null&&(kind!=='expense'||!money(v.ownAmt,v.cur)||!money(v.amt,v.cur)||v.ownAmt>v.amt))fail('自己負擔須在整筆付款金額內，且使用相同幣別。');
++    if(kind==='reimbursement'&&(!(v.amt>0)||!text(v.expenseId,100)||!/^[A-Za-z0-9_-]+$/.test(v.expenseId)||!['現金','轉帳','待確認'].includes(v.pay)))fail('收回代墊須有原花費識別碼、實收金額與收款方式。');
+     if(v.actualTwd!==null&&v.actualTwd!==undefined&&!money(v.actualTwd,'TWD'))fail('台幣帳單金額無效。');
+   }else if(path.startsWith('todos/')||path.startsWith('data/users/me/')){
+     if(!text(v.text,2000)||typeof v.done!=='boolean')fail('待辦或攜帶清單需有文字及完成狀態。');
+@@ -42,8 +44,8 @@ const editingGuide={
+   config:'meta/config: title、start=YYYY-MM-DD、regions={地區代號:{name,tone}}、days=[{region,locations:[按順序的地區代號],overnight,theme}]、segments=[{id,name,startDay}]。D1 為出發日；天數上限 365。改陣列前先讀完整設定，保留其他日期。',
+   items:'items/<穩定唯一ID>: day=D天數、time/end=HH:MM 或空白、title、cat、note、addr、url、budget=[{cur,amt}]。新增以 expected_revision=0；修改先讀取完整文件的 revision。',
+   categories,currencies,
+-  expenses:'misc/<ID>: kind=expense、label、date=YYYY-MM-DD、cur、amt、pay=現金/刷卡/待確認、actualTwd=實際台幣帳單金額或 null。行程預算不重複記實支，未確認付款方式保留待確認。',
+-  transfers:'換匯 kind=exchange、cur/amt=付出、toCur/toAmt=實收，必須皆已確認；不列支出。現金增減 kind=cashflow、direction=in/out。私人現金盤點在 private/config.wallet.snapshots；沒有實際盤點不能憑推算填入。',
++  expenses:'misc/<ID>: kind=expense、label、date=YYYY-MM-DD、cur、amt、pay=現金/刷卡/待確認、actualTwd=實際台幣帳單金額或 null。行程預算不重複記實支，未確認付款方式保留待確認。代墊保留 amt 整筆付款，ownAmt 填自己負擔（0 到 amt、同幣別）；不填代表全部自己負擔。',
++  transfers:'換匯 kind=exchange、cur/amt=付出、toCur/toAmt=實收，必須皆已確認；不列支出。現金增減 kind=cashflow、direction=in/out。收回代墊 kind=reimbursement、expenseId=原 misc 文件 ID、cur/amt=實收原幣、pay=現金/轉帳/待確認；只記實際收到的金額，不列個人支出，現金收回增加現金。原花費與收款都需讀取版本，避免重複記帳。私人現金盤點在 private/config.wallet.snapshots；沒有實際盤點不能憑推算填入。',
+   notes:'notes/me/items/<ID>: title、date=YYYY-MM-DD 或空白、text、photos=[]。只寫使用者提供或確認的筆記，不代寫真實經歷。待辦 todos/<ID>: text、done、order。',
+ };
+ export async function collaborationTool(name,args,ctx){
+diff --git a/public/cloud.js b/public/cloud.js
+index 64055eb..5a0fe27 100644
+--- a/public/cloud.js
++++ b/public/cloud.js
+@@ -28,12 +28,12 @@
+   const collection=p=>({doc:id=>doc(p+'/'+id),get:async()=>colSnap(p),add:async v=>{const d=doc(p+'/'+crypto.randomUUID());await d.set(v);return d;},onSnapshot:fn=>sub(subscriptions,p,fn,()=>colSnap(p))});
+   const b64=b=>new Promise(ok=>{const r=new FileReader();r.onload=()=>ok(r.result);r.readAsDataURL(b);});
+   async function fullExport(){const snap=await repo.snapshot(),all=Object.fromEntries(snap.docs),assets={};for(const [id,b]of snap.assets)assets[id]=await b64(b);const cols={};for(const c of ['items','misc','split','todos'])cols[c]=Object.fromEntries(snap.docs.filter(([p])=>parent(p)===c).map(([p,v])=>[p.slice(c.length+1),v]));
+-    return {format:'trip-content',version:1,moneyVersion:2,exportedAt:new Date().toISOString(),config:all['meta/config']||{title:'Unconfigured trip',start:new Date().toISOString().slice(0,10),days:[{region:'',locations:[],theme:''}],regions:{},segments:[]},private:all['private/config']||{},data:{...cols,meta:{maps:all['meta/maps']||{},plans:all['meta/plans']||{}}},local:{docs:Object.fromEntries(snap.docs.filter(([p])=>/^(notes|data\/users)\//.test(p))),assets},cloud:{queue:snap.queue,conflicts:snap.conflicts,history:snap.history,assetJobs:snap.assetJobs,allDocs:snap.docs}};}
++    return {format:'trip-content',version:1,moneyVersion:3,exportedAt:new Date().toISOString(),config:all['meta/config']||{title:'Unconfigured trip',start:new Date().toISOString().slice(0,10),days:[{region:'',locations:[],theme:''}],regions:{},segments:[]},private:all['private/config']||{},data:{...cols,meta:{maps:all['meta/maps']||{},plans:all['meta/plans']||{}}},local:{docs:Object.fromEntries(snap.docs.filter(([p])=>/^(notes|data\/users)\//.test(p))),assets},cloud:{queue:snap.queue,conflicts:snap.conflicts,history:snap.history,assetJobs:snap.assetJobs,allDocs:snap.docs}};}
+   async function download(filename,data){const blob=data instanceof Blob?data:new Blob([data],{type:filename.endsWith('.json')?'application/json':'application/pdf'});const f=new File([blob],filename,{type:blob.type});if(navigator.canShare?.({files:[f]})&&navigator.maxTouchPoints>0){try{await navigator.share({files:[f]});return;}catch(e){if(e.name==='AbortError')throw {code:'declined'};}}const objectURL=URL.createObjectURL(blob);sheet('備份已準備完成','<p>備份包含私人資料及照片，請下載並保存在自己的安全空間。</p><a class="btn" id="cloud-download" download="'+esc(filename)+'" href="'+objectURL+'">下載 '+esc(filename)+'</a>');document.getElementById('cloud-close').onclick=()=>{document.getElementById('cloud-dialog').hidden=true;URL.revokeObjectURL(objectURL);};}
+   window.__tripLocal={urlOf:id=>urls.get(id)||'',fullExport,backup:async()=> (await fullExport()).local,restore:async local=>{for(const [id,uri]of Object.entries(local.assets||{})){if(blobs.has(id)||!/^[0-9a-f]{1,64}$/.test(id)||typeof uri!=='string'||!uri.startsWith('data:'))continue;const b=await(await fetch(uri)).blob();await putAsset(id,b);}for(const [p,v]of Object.entries(local.docs||{}))if(/^(notes|data\/users)\/[A-Za-z0-9_~:@+./-]+$/.test(p)&&!p.includes('..'))await write(p,v);}};
+   async function putAsset(id,b){if(b.size>20*1024*1024)throw new Error('單個照片或附件需小於 20 MB。');await repo.asset(id,b);blobs.set(id,b);if(urls.has(id))URL.revokeObjectURL(urls.get(id));urls.set(id,URL.createObjectURL(b));broadcast('assets');schedule();return {id,url:urls.get(id),sizeBytes:b.size,contentType:b.type};}
+   let controller=new AbortController(),fetchBounded,offlineTools,shellReady=false,shellPromise,shellError='';
+-  async function call(path,init={}){const r=await fetchBounded('/api/journal/'+path,{...init,signal:controller.signal,headers:{...(init.body&&!(init.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...init.headers},cache:'no-store'});if(!r.ok){let v;try{v=await r.json();}catch{}const e=new Error(v?.error||'網路或登入暫時無法使用。');e.status=r.status;throw e;}return r;}
++  async function call(path,init={}){const r=await fetchBounded('/api/journal/'+path,{...init,signal:controller.signal,headers:{'X-Journal-Money-Version':'3',...(init.body&&!(init.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...init.headers},cache:'no-store'});if(!r.ok){let v;try{v=await r.json();}catch{}const e=new Error(v?.error||'網路或登入暫時無法使用。');e.status=r.status;throw e;}return r;}
+   const api={session:async()=>{const r=await(await call('session')).json();if(r.userId!==identity.userId){const e=new Error('登入身分已變更，請重新開啟。');e.status=401;throw e;}},push:async op=>(await call('push',{method:'POST',body:JSON.stringify(op)})).json(),document:async p=>(await call('document?path='+encodeURIComponent(p))).json(),changes:async after=>(await call('changes?after='+after)).json(),assets:async()=>(await(await call('assets')).json()).assets,assetUpload:async(id,b)=>call('assets/'+id,{method:b?'PUT':'DELETE',...(b?{body:b,headers:{'Content-Type':b.type||'application/octet-stream'}}:{})}),assetDownload:async a=>{const b=await(await call('assets/'+a.id)).blob(),digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await b.arrayBuffer())),x=>x.toString(16).padStart(2,'0')).join('');if(digest!==a.sha)throw new Error('照片校驗失敗，請稍後再同步。');return new Blob([b],{type:a.mime});}};
+   let identity;
+   function status(s){lastStatus=s;const text=s.phase==='synced'?'已同步・'+new Date(s.at).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'}):s.phase==='syncing'?'同步中…':s.phase==='conflict'?'有 '+s.conflicts+' 筆衝突待處理':s.phase==='locked'?'需要重新登入':(s.phase==='offline'?'離線・':'已存裝置・')+'待同步 '+s.pending+' 筆';document.getElementById('cloud-state').textContent=text;document.getElementById('cloud-message').textContent=s.phase==='offline'?'目前無法連線，修改先保存在此裝置，恢復網路後會同步。':s.message||'';document.getElementById('cloud-conflicts').hidden=!s.conflicts;document.getElementById('cloud-conflicts').textContent='處理衝突 '+s.conflicts+' 筆';if(s.phase==='locked')lock(s.message);}
+diff --git a/public/sw.js b/public/sw.js
+index 294b649..cd7132e 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,4 +1,4 @@
+-const VERSION='journal-sites-shell-v7';
++const VERSION='journal-sites-shell-v8';
+ const CORE=['/trip','/cloud.js','/sync-core.js','/offline-core.js'];
+ const OPTIONAL=['/manifest.webmanifest','/icon-192.png','/icon-512.png','/vendor/leaflet.js','/vendor/html2canvas.min.js','/vendor/jspdf.umd.min.js'];
+ const ASSETS=[...CORE.slice(1),...OPTIONAL];
+diff --git a/public/sync-core.js b/public/sync-core.js
+index db08392..49f8101 100644
+--- a/public/sync-core.js
++++ b/public/sync-core.js
+@@ -8,12 +8,12 @@ export class CloudStore {
+   async writeMany(changes){
+     if(!Array.isArray(changes)||!changes.length||new Set(changes.map(c=>c.path)).size!==changes.length)throw new Error('請提供不同路徑的紀錄。');
+     const prepared=changes.map(c=>({...structuredClone(c),id:crypto.randomUUID()}));
+-    await this.tx(['docs','revisions','queue'],'readwrite',(t,g)=>{for(const {path,value,expected,id}of prepared)g('revisions',path,rev=>{if(value===null)t.objectStore('docs').delete(path);else t.objectStore('docs').put(value,path);t.objectStore('queue').put({id,path,base:Number.isSafeInteger(expected)?expected:rev||0,value,deleted:value===null},path);});});
++    await this.tx(['docs','revisions','queue'],'readwrite',(t,g)=>{for(const {path,value,expected,id}of prepared)g('revisions',path,rev=>{if(value===null)t.objectStore('docs').delete(path);else t.objectStore('docs').put(value,path);t.objectStore('queue').put({id,path,moneyVersion:3,base:Number.isSafeInteger(expected)?expected:rev||0,value,deleted:value===null},path);});});
+   }
+   async ack(sent,revision){await this.tx(['revisions','queue'],'readwrite',(t,g)=>g('queue',sent.path,current=>{t.objectStore('revisions').put(revision,sent.path);if(current?.id===sent.id)t.objectStore('queue').delete(sent.path);else if(current)t.objectStore('queue').put({...current,base:revision},sent.path);}));}
+   async conflict(path,remote){await this.tx(['docs','conflicts'],'readwrite',(t,g)=>g('docs',path,local=>t.objectStore('conflicts').put({path,local:local??null,remote,at:new Date().toISOString()},path)));}
+   async applyPage(page){await this.tx(['docs','queue','revisions','conflicts','meta'],'readwrite',(t,g)=>{for(const row of page.docs){g('queue',row.path,pending=>{if(pending){if(row.revision>pending.base)g('docs',row.path,local=>t.objectStore('conflicts').put({path:row.path,local:local??null,remote:row,at:new Date().toISOString()},row.path));return;}g('revisions',row.path,revision=>{if(row.revision<=(revision||0))return;if(row.deleted)t.objectStore('docs').delete(row.path);else t.objectStore('docs').put(row.value,row.path);t.objectStore('revisions').put(row.revision,row.path);});});}t.objectStore('meta').put(page.cursor,'cursor');});}
+-  async resolve(path,choice){await this.tx(['docs','queue','revisions','conflicts','history'],'readwrite',(t,g)=>g('conflicts',path,c=>{if(!c)return;g('docs',path,local=>{const rev=c.remote.revision||0;t.objectStore('history').put({...c,latestLocal:local??null,choice,resolvedAt:new Date().toISOString()},crypto.randomUUID());t.objectStore('revisions').put(rev,path);if(choice==='remote'){if(c.remote.deleted)t.objectStore('docs').delete(path);else t.objectStore('docs').put(c.remote.value,path);t.objectStore('queue').delete(path);}else t.objectStore('queue').put({id:crypto.randomUUID(),path,base:rev,value:local??null,deleted:local===undefined},path);t.objectStore('conflicts').delete(path);});}));}
++  async resolve(path,choice){await this.tx(['docs','queue','revisions','conflicts','history'],'readwrite',(t,g)=>g('conflicts',path,c=>{if(!c)return;g('docs',path,local=>{const rev=c.remote.revision||0;t.objectStore('history').put({...c,latestLocal:local??null,choice,resolvedAt:new Date().toISOString()},crypto.randomUUID());t.objectStore('revisions').put(rev,path);if(choice==='remote'){if(c.remote.deleted)t.objectStore('docs').delete(path);else t.objectStore('docs').put(c.remote.value,path);t.objectStore('queue').delete(path);}else t.objectStore('queue').put({id:crypto.randomUUID(),path,moneyVersion:3,base:rev,value:local??null,deleted:local===undefined},path);t.objectStore('conflicts').delete(path);});}));}
+   async asset(id,blob,dirty=true){await this.tx(['assets','assetJobs'],'readwrite',t=>{if(blob===null)t.objectStore('assets').delete(id);else t.objectStore('assets').put(blob,id);if(dirty)t.objectStore('assetJobs').put({deleted:blob===null},id);});}
+   async snapshot(){return this.tx(['docs','assets','queue','conflicts','history','assetJobs','meta'],'readonly',(t,g,done)=>{const result={};for(const s of ['docs','assets','queue','conflicts','history','assetJobs','meta']){const keys=t.objectStore(s).getAllKeys(),values=t.objectStore(s).getAll();values.onsuccess=()=>{result[s]=keys.result.map((k,i)=>[k,values.result[i]]);if(Object.keys(result).length===7)done(result);};}});}
+ }
+@@ -24,7 +24,7 @@ export class SyncEngine {
+   async run(){if(this.busy)return;this.busy=true;this.status({phase:'syncing',...await this.counts()});try{
+     await this.api.session();
+     for(const [id,job] of await this.store.all('assetJobs')){const blob=await this.store.get('assets',id);await this.api.assetUpload(id,job.deleted?null:blob);await this.store.tx(['assetJobs','assets'],'readwrite',(t,g)=>g('assets',id,current=>{if((job.deleted&&!current)||(!job.deleted&&current?.size===blob?.size&&current?.type===blob?.type))t.objectStore('assetJobs').delete(id);}));}
+-    for(const [,op] of await this.store.all('queue')){if(await this.store.get('conflicts',op.path))continue;const ack=await this.api.push(op);if(ack.ok)await this.store.ack(op,ack.revision);else await this.store.conflict(op.path,await this.api.document(op.path));}
++    for(const [,op] of await this.store.all('queue')){if(await this.store.get('conflicts',op.path))continue;let ack;try{ack=await this.api.push(op);}catch(error){if(error.status!==426)throw error;await this.store.conflict(op.path,await this.api.document(op.path));continue;}if(ack.ok)await this.store.ack(op,ack.revision);else await this.store.conflict(op.path,await this.api.document(op.path));}
+     let more=true;while(more){const page=await this.api.changes((await this.store.get('meta','cursor'))||0);await this.store.applyPage(page);for(const row of page.docs)await this.changed(row.path);more=page.more;}
+     for(const asset of await this.api.assets()){if(!await this.store.get('assets',asset.id)&&!await this.store.get('assetJobs',asset.id)){await this.store.asset(asset.id,await this.api.assetDownload(asset),false);await this.changed('assets');}}
+     const counts=await this.counts();this.status({phase:counts.conflicts?'conflict':counts.pending?'pending':'synced',...counts,at:new Date().toISOString()});
+diff --git a/public/trip.html b/public/trip.html
+index b31381a..8d37ba8 100644
+--- a/public/trip.html
++++ b/public/trip.html
+@@ -633,7 +633,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+       <button class="addrow" id="split-add" type="button" hidden>＋ 新增分攤項目</button>
+     </details>
+     <div class="box" id="misc-box" hidden>
+-      <h3>實際花費與換匯</h3><p class="fine">花費保留原幣，另依設定匯率估算台幣。換匯與現金增減只記金流，不列入支出；手續費可另記一筆花費。</p><div id="actual-summary" class="fine"></div>
++      <h3>實際花費與換匯</h3><p class="fine">花費保留整筆付款；有填「自己負擔」時，個人統計只計自己的份額。代墊收款、換匯與現金增減不列支出；現金收款會增加身上現金。</p><div id="actual-summary" class="fine"></div><div id="advance-summary" class="fine" role="status"></div>
+       <div class="misc" id="misc"></div>
+       <button class="addrow" id="misc-add" type="button">＋ 新增花費／金流</button>
+     </div>
+@@ -802,7 +802,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+ <div class="scrim" id="ms-scrim" hidden>
+   <form class="sheet" id="msheet" role="dialog" aria-modal="true" aria-labelledby="ms-title">
+     <h2 id="ms-title">新增花費／金流</h2>
+-    <label>紀錄類型<select class="field" id="ms-kind"><option value="expense">花費</option><option value="exchange">換匯（不列支出）</option><option value="cashflow">現金增減（不列支出）</option></select></label>
++    <label>紀錄類型<select class="field" id="ms-kind"><option value="expense">花費</option><option value="exchange">換匯（不列支出）</option><option value="cashflow">現金增減（不列支出）</option><option value="reimbursement">收回代墊（不列支出）</option></select></label>
+     <label>名稱<input class="field" id="ms-label" placeholder="例如：午餐／換匯" autocomplete="off"></label>
+     <label>日期<select class="field" id="ms-day"></select></label>
+     <section id="ms-link-wrap">
+@@ -819,6 +819,8 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     <div class="seg" id="ms-pay" role="group" aria-label="付款方式"><button type="button" data-pay="現金">現金</button><button type="button" data-pay="刷卡">刷卡</button><button type="button" data-pay="待確認">待確認</button></div>
+     <label id="ms-direction-wrap" hidden>現金方向<select class="field" id="ms-direction"><option value="in">增加（領現／補入）</option><option value="out">減少（存回／移出）</option></select></label>
+     <div id="ms-exchange" hidden><label>收到幣別<select class="field" id="ms-to-cur"><option value="PHP">披索 PHP</option><option value="USD">美金 USD</option><option value="TWD">台幣 TWD</option><option value="VND">越南盾 VND</option><option value="JPY" id="ms-to-legacy-jpy" hidden>舊日幣 JPY</option></select></label><label>收到金額<input class="field" id="ms-to-amt" inputmode="decimal"></label><p class="fine" id="ms-rate" role="status"></p></div>
++    <section id="ms-own-wrap"><label>自己負擔（選填，與上方同幣別）<input class="field" id="ms-own" inputmode="decimal" placeholder="留白代表全部自己負擔"></label><p class="fine">上方金額保留整筆付款，這裡填自己的份額；差額列代墊，不算個人花費。台幣帳單仍填整筆，個人花費按比例折算。</p></section>
++    <section id="ms-reimbursement-wrap" hidden><label>收回哪筆代墊<select class="field" id="ms-expense"></select></label><p class="fine">使用原花費幣別，可分次收款；尚未收到的金額不要登錄。現金入帳才增加身上現金。</p><div class="seg" id="ms-repay" role="group" aria-label="收款方式"><button type="button" data-pay="現金">現金</button><button type="button" data-pay="轉帳">轉帳</button><button type="button" data-pay="待確認">待確認</button></div></section>
+     <label id="ms-actual-wrap">實際台幣帳單金額（選填，取代估算）<input class="field" id="ms-actual" inputmode="decimal"></label>
+     <label class="checkline"><input type="checkbox" id="ms-cash-included">補登舊帳：這筆金流已包含在目前的現金盤點</label>
+     <p class="fine">新花費／新換匯請勿勾選；勾選代表不再扣款或加款。</p>
+@@ -1113,15 +1115,20 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+   function routeText(d, regions) { return dayLocations(d).map((key) => (regions[key] || {}).name || key).join(" → "); }
+   function decimalAmount(raw) { const t = String(raw).trim().replace(/,/g, ""); return /^(?:\d+)(?:\.\d{1,2})?$/.test(t) && Number.isFinite(+t) ? +t : null; }
+   function effectiveRate(paid, received) { return Number.isFinite(paid) && paid > 0 && Number.isFinite(received) && received > 0 ? received / paid : null; }
++  function personalAmount(m) {
++    if (typeof m.amt !== "number" || !Number.isFinite(m.amt) || m.amt < 0) return null;
++    if (m.ownAmt === null || m.ownAmt === undefined) return m.amt;
++    return typeof m.ownAmt === "number" && Number.isFinite(m.ownAmt) && m.ownAmt >= 0 && m.ownAmt <= m.amt ? m.ownAmt : null;
++  }
+   function spendingSummary(records, rates) {
+     const totals = {}, missing = new Set(); let twd = 0, pending = 0;
+     records.filter((m) => !m.kind || m.kind === "expense").forEach((m) => {
+-      if (typeof m.amt !== "number" || !Number.isFinite(m.amt) || m.amt < 0) { pending++; return; }
+-      const cur = m.cur || "JPY"; totals[cur] = (totals[cur] || 0) + m.amt;
+-      if (typeof m.actualTwd === "number" && Number.isFinite(m.actualTwd) && m.actualTwd >= 0) twd += m.actualTwd;
+-      else if (cur === "TWD") twd += m.amt;
+-      else if (typeof rates[cur] === "number" && Number.isFinite(rates[cur]) && rates[cur] > 0) twd += m.amt * rates[cur];
+-      else if (m.amt) missing.add(cur);
++      const own = personalAmount(m); if (own === null) { pending++; return; }
++      const cur = m.cur || "JPY"; totals[cur] = (totals[cur] || 0) + own;
++      if (typeof m.actualTwd === "number" && Number.isFinite(m.actualTwd) && m.actualTwd >= 0) twd += m.actualTwd * (m.amt ? own / m.amt : 1);
++      else if (cur === "TWD") twd += own;
++      else if (typeof rates[cur] === "number" && Number.isFinite(rates[cur]) && rates[cur] > 0) twd += own * rates[cur];
++      else if (own) missing.add(cur);
+     });
+     return { totals, twd, missing: [...missing], pending };
+   }
+@@ -1145,6 +1152,9 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+       if (m.kind === "exchange") {
+         if (source === cur) { if (valid(m.amt)) amount -= m.amt; else pending++; }
+         if (m.toCur === cur) { if (valid(m.toAmt)) amount += m.toAmt; else pending++; }
++      } else if (m.kind === "reimbursement" && source === cur) {
++        if (m.pay === "現金" && valid(m.amt)) amount += m.amt;
++        else if (m.pay !== "轉帳" && m.amt !== 0) pending++;
+       } else if (m.kind === "cashflow" && source === cur) {
+         if (valid(m.amt) && ["in", "out"].includes(m.direction)) amount += (m.direction === "in" ? 1 : -1) * m.amt; else pending++;
+       } else if ((!m.kind || m.kind === "expense") && source === cur && m.pay !== "刷卡") {
+@@ -1163,6 +1173,33 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+       return [{ cur, ...effect, state }];
+     });
+   }
++  const moneyRound = n => Math.round((n + Number.EPSILON) * 100) / 100;
++  function advanceStatus(expense, records) {
++    const own = personalAmount(expense), total = own === null ? 0 : moneyRound(expense.amt - own);
++    const receipts = records.filter(r => r.kind === "reimbursement" && r.expenseId === expense.id);
++    const valid = receipts.filter(r => r.cur === expense.cur && typeof r.amt === "number" && Number.isFinite(r.amt) && r.amt > 0);
++    const received = moneyRound(valid.reduce((n,r) => n + r.amt, 0));
++    return { total, received, outstanding: moneyRound(Math.max(0,total-received)), excess: moneyRound(Math.max(0,received-total)), invalid: receipts.length-valid.length };
++  }
++  function advanceError(record, records) {
++    const receipts = records.filter(r => r.kind === "reimbursement" && r.expenseId === record.id);
++    if ((!record.kind || record.kind === "expense")) {
++      if ((record.ownAmt != null || receipts.length) && personalAmount(record) === null) return "自己負擔須為 0 到整筆付款金額之間。";
++      if (record.ownAmt != null && currencyAmount(String(record.ownAmt), record.cur) === null) return "自己負擔金額格式無效。";
++      if (receipts.some(r => r.cur !== record.cur)) return "已有收款紀錄，請先處理收款後再更改幣別。";
++      if (advanceStatus(record, records).excess) return "已收款超過修改後的代墊，請先核對收款或自己負擔。";
++    } else if (receipts.length) return "已有連結收款，不能直接更改原花費類型。";
++    if (record.kind === "reimbursement") {
++      const expense = records.find(r => r.id === record.expenseId && (!r.kind || r.kind === "expense"));
++      if (!expense || !(advanceStatus(expense, records).total > 0)) return "請選擇有效的原代墊花費。";
++      if (record.cur !== expense.cur) return "收款請使用原代墊幣別；不同幣別請先另外記錄換匯。";
++      if (!(record.amt > 0) || currencyAmount(String(record.amt),record.cur) === null) return "請填實際收到的有效金額。";
++      if (!["現金","轉帳","待確認"].includes(record.pay)) return "請選收款方式。";
++      const next = [...records.filter(r => r.id !== record.id), record];
++      if (advanceStatus(expense,next).excess) return "收款超過這筆尚未收回的代墊，請核對金額。";
++    }
++    return "";
++  }
+   // END_FINANCE_HELPERS
+ 
+   // BEGIN_SEGMENT_HELPERS
+@@ -1872,9 +1909,27 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+       return "儲存後現金：" + originalMoney(cur, before.amount) + " → " + originalMoney(cur, after.amount);
+     }).filter(Boolean).join("；");
+   }
++  function advanceText(m) {
++    if (m.kind === "reimbursement") {
++      const expense = misc.find(x => x.id === m.expenseId);
++      return expense ? "收回代墊：" + expense.label : "原代墊已移除／尚未同步，收款與現金仍保留";
++    }
++    if (m.kind && m.kind !== "expense" || m.ownAmt == null) return "";
++    const a = advanceStatus(m, misc);
++    return "自己 " + originalMoney(m.cur,m.ownAmt) + "｜代墊 " + originalMoney(m.cur,a.total) + "｜已收 " + originalMoney(m.cur,a.received) + "｜待收 " + originalMoney(m.cur,a.outstanding) + (a.excess ? "｜超收 " + originalMoney(m.cur,a.excess) + "，請核對" : "") + (a.invalid ? "｜有收款幣別／金額待核對" : "");
++  }
++  function advanceSummaryHtml() {
++    const rows = misc.filter(m => (!m.kind || m.kind === "expense") && m.ownAmt != null);
++    return rows.length ? '<p>個人花費只計自己負擔；完整付款與收回代墊保留在明細。</p>' + rows.map(m => '<p>' + esc(m.label) + '：' + esc(advanceText(m)) + '</p>').join('') : '';
++  }
++  function reimbursementOptions(selected) {
++    const rows = misc.filter(m => (!m.kind || m.kind === "expense") && advanceStatus(m,misc).total > 0);
++    $("ms-expense").innerHTML = '<option value="">請選原代墊花費</option>' + rows.map(m => '<option value="'+esc(m.id)+'">'+esc(m.label)+'｜'+esc(m.cur)+' 待收 '+advanceStatus(m,misc.filter(r=>r.id!==mDraftId)).outstanding+'</option>').join('') + (selected && !rows.some(m=>m.id===selected) ? '<option value="'+esc(selected)+'">原代墊已移除／尚未同步</option>' : '');
++    $("ms-expense").value = selected || '';
++  }
+   function updateCashImpact() {
+     const kind = $("ms-kind").value, cur = segVal("ms-cur", "cur");
+-    const record = { id: mDraftId, kind, cur, amt: currencyAmount($("ms-amt").value, cur), pay: segVal("ms-pay", "pay"), cashIncluded: $("ms-cash-included").checked,
++    const record = { id: mDraftId, kind, cur, amt: currencyAmount($("ms-amt").value, cur), pay: segVal(kind === "reimbursement" ? "ms-repay" : "ms-pay", "pay"), cashIncluded: $("ms-cash-included").checked,
+       direction: $("ms-direction").value, toCur: $("ms-to-cur").value, toAmt: currencyAmount($("ms-to-amt").value, $("ms-to-cur").value) };
+     $("ms-cash-impact").textContent = cashImpactText(record, true);
+   }
+@@ -1920,17 +1975,18 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+   }
+   function miscValueText(m) {
+     if (m.kind === "exchange") { const r = effectiveRate(m.amt, m.toAmt); return (cellNum(m.amt) === null ? "未填" : originalMoney(m.cur, m.amt)) + " → " + (cellNum(m.toAmt) === null ? "未填" : originalMoney(m.toCur, m.toAmt)) + (r ? "（1 " + m.cur + " = " + r.toLocaleString("en-US", { maximumFractionDigits: 8 }) + " " + m.toCur + "）" : ""); }
+-    return (m.kind === "cashflow" ? (m.direction === "out" ? "− " : "＋ ") : "") + (cellNum(m.amt) === null ? "未填" : originalMoney(m.cur || "JPY", m.amt));
++    return (m.kind === "cashflow" ? (m.direction === "out" ? "− " : "＋ ") : m.kind === "reimbursement" ? "收回 ＋ " : "") + (cellNum(m.amt) === null ? "未填" : originalMoney(m.cur || "JPY", m.amt));
+   }
+   function renderMisc() {
+     $("misc-box").hidden = !isOwner || !db;
+     if (!isOwner || !db) return;
+     if (!miscLoaded) { $("misc").innerHTML = '<p class="fine">正在載入…</p>'; return; }
+     renderWallet();
+-    $("actual-summary").textContent = summaryText(misc);
++    $("actual-summary").textContent = "個人實際花費：" + summaryText(misc);
++    $("advance-summary").innerHTML = advanceSummaryHtml();
+     const list = misc.slice().sort((a, b) => miscDayNumber(a) - miscDayNumber(b) || (a.order ?? 0) - (b.order ?? 0));
+     groupedRecords($("misc"), list, miscDayNumber, (m) => {
+-      const sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.kind === "cashflow" ? "現金增減・不列支出" : m.pay, cashImpactText(m), m.note].filter(Boolean).join("｜");
++      const sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.kind === "cashflow" ? "現金增減・不列支出" : m.kind === "reimbursement" ? "收回代墊・" + m.pay + "・不列支出" : m.pay, cashImpactText(m), advanceText(m), m.note].filter(Boolean).join("｜");
+       const linked = m.itineraryId && items.find(it => it.id === m.itineraryId);
+       const link = m.itineraryId ? (linked ? '<button type="button" class="btn ghost" data-misc-item="' + esc(linked.id) + '">行程：' + esc(linked.title) + '</button>' : '<small class="fine">原連結行程已移除／尚未同步；花費仍保留。</small>') : '';
+       return '<div class="mitem" data-expense-id="' + esc(m.id) + '"><button type="button" class="mrow" data-misc="' + esc(m.id) + '"><span><b>' + esc(m.label || "（未命名）") + '</b><small>' + esc(sub) + '</small></span><span class="mv">' + esc(miscValueText(m)) + '</span></button>' + link + rcStrip("misc", m) + '</div>';
+@@ -1942,6 +1998,8 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     const kind = $("ms-kind").value, exchange = kind === "exchange";
+     $("ms-exchange").hidden = !exchange; $("ms-pay").hidden = kind !== "expense"; $("ms-actual-wrap").hidden = kind !== "expense";
+     $("ms-direction-wrap").hidden = kind !== "cashflow";
++    $("ms-own-wrap").hidden = kind !== "expense";
++    $("ms-reimbursement-wrap").hidden = kind !== "reimbursement";
+     $("ms-link-wrap").hidden = kind !== 'expense';
+     $("ms-new-item").hidden = kind !== 'expense' || $("ms-itinerary").value !== '__new';
+     updateCashImpact();
+@@ -1954,11 +2012,14 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     mEdit = m || null; mDelArmed = false;
+     mDraftId = m ? m.id : crypto.randomUUID(); mItemDraftId = crypto.randomUUID();
+     $("ms-title").textContent = m ? "修改花費／金流" : "新增花費／金流";
+-    $("ms-kind").value = m && ["exchange", "cashflow"].includes(m.kind) ? m.kind : "expense";
++    $("ms-kind").value = m && ["exchange", "cashflow", "reimbursement"].includes(m.kind) ? m.kind : "expense";
+     $("ms-direction").value = m && m.direction === "out" ? "out" : "in"; $("ms-cash-included").checked = !!(m && m.cashIncluded);
+     $("ms-to-legacy-jpy").hidden = !(m && m.toCur === "JPY");
+     $("ms-to-cur").value = m && m.toCur || "PHP"; $("ms-to-amt").value = m && m.toAmt != null ? m.toAmt : "";
+     $("ms-actual").value = m && m.actualTwd != null ? m.actualTwd : "";
++    $("ms-own").value = m && m.ownAmt != null ? m.ownAmt : "";
++    reimbursementOptions(m && m.expenseId);
++    segSet("ms-repay", "pay", m && ["現金","轉帳","待確認"].includes(m.pay) ? m.pay : "現金");
+     $("ms-legacy-jpy").hidden = !(m && (!m.cur || m.cur === "JPY"));
+     $("ms-label").value = m ? m.label || "" : "";
+     const savedDate = m && (m.date || (MISC_DAYS.includes(m.day) && m.day ? isoOf(dateOf(MISC_DAYS.indexOf(m.day))) : ""));
+@@ -2005,6 +2066,13 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     }
+     updateExchangeFields();
+   });
++  $("ms-expense").addEventListener("change", () => {
++    const expense = misc.find(m => m.id === $("ms-expense").value);
++    if (!expense) return;
++    segSet("ms-cur","cur",expense.cur);
++    if (!mEdit) $("ms-label").value = "收回代墊｜" + expense.label;
++    updateExchangeFields();
++  });
+   $("msheet").addEventListener("click", (e) => {
+     const b = e.target.closest(".seg button");
+     if (b) b.parentElement.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+@@ -2021,6 +2089,9 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     if (body.pay === "待確認" && mEdit && mEdit.pay && !["現金", "刷卡"].includes(mEdit.pay)) body.pay = mEdit.pay;
+     body.kind = $("ms-kind").value;
+     body.cashIncluded = $("ms-cash-included").checked;
++    body.ownAmt = body.kind === "expense" && $("ms-own").value.trim() ? currencyAmount($("ms-own").value, body.cur) : null;
++    body.expenseId = body.kind === "reimbursement" ? $("ms-expense").value : null;
++    if (body.kind === "reimbursement") body.pay = segVal("ms-repay", "pay");
+     body.direction = body.kind === "cashflow" ? $("ms-direction").value : null;
+     body.date = $("ms-day").value;
+     body.actualTwd = body.kind === "expense" ? decimalAmount($("ms-actual").value) : null;
+@@ -2029,6 +2100,8 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     const invalid = ($("ms-amt").value.trim() && body.amt === null) || (body.kind === "expense" && $("ms-actual").value.trim() && body.actualTwd === null) || (body.kind === "exchange" && (!effectiveRate(body.amt, body.toAmt) || body.cur === body.toCur)) || (body.kind === "cashflow" && !(body.amt > 0));
+     if (invalid) { $("ms-err").textContent = "請填有效金額（越南盾、日幣為整數，其餘最多兩位小數）；現金增減及換匯金額須大於 0，換匯幣別須不同。"; $("ms-err").hidden = false; return; }
+     if (!body.label) { $("ms-err").textContent = "請填名稱。"; $("ms-err").hidden = false; return; }
++    const advanceIssue = body.kind === "expense" && $("ms-own").value.trim() && body.ownAmt === null ? "自己負擔金額格式無效。" : advanceError({id:mDraftId,...body},misc);
++    if (advanceIssue) { $("ms-err").textContent = advanceIssue; $("ms-err").hidden = false; return; }
+     const link = body.kind === 'expense' ? $("ms-itinerary").value : '';
+     const newDay = isoTripDay(body.date);
+     if (link === '__new' && !newDay) { $("ms-err").textContent = '同時新增行程時，請選擇旅程內的日期。'; $("ms-err").hidden = false; return; }
+@@ -2042,6 +2115,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+   });
+   $("ms-del").addEventListener("click", () => {
+     if (!mEdit) return;
++    if (misc.some(r => r.kind === "reimbursement" && r.expenseId === mEdit.id)) { $("ms-err").textContent = "已有連結收款，請先修改或刪除收款紀錄，再處理原花費。"; $("ms-err").hidden = false; return; }
+     if (!mDelArmed) { mDelArmed = true; $("ms-del").textContent = "再按一次刪除"; return; }
+     const id = mEdit.id, rc = Array.isArray(mEdit.receipts) ? mEdit.receipts : [];
+     miscWrite(async () => {
+@@ -2832,7 +2906,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     ioMsg("正在整理…");
+     if (window.__tripLocal.fullExport) { try { const p = await window.__tripLocal.fullExport(); await (await window.claude.use("downloads")).save({filename:"journal-backup-"+new Date().toISOString().slice(0,10)+".json",data:JSON.stringify(p,null,1)}); ioMsg("已匯出完整備份（含尚未同步資料與衝突版本）。"); } catch(e) { ioMsg("備份未完成，請再試一次。"); } return; }
+     const priv = await db.doc("private/config").get().then((s) => (s.exists ? s.data() : {}), () => pcfg);
+-    const pack = { format: CONTENT_FORMAT, version: 1, moneyVersion: 2, exportedAt: new Date().toISOString(),
++    const pack = { format: CONTENT_FORMAT, version: 1, moneyVersion: 3, exportedAt: new Date().toISOString(),
+       config: cfg, private: priv,
+       data: { items: asDocs(items), split: asDocs(split), misc: asDocs(misc), todos: asDocs(todos), meta: { maps, plans: planSel } } };
+     if (LOCAL) pack.local = await window.__tripLocal.backup();
+@@ -2846,7 +2920,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+   }
+   function checkPack(p) {
+     if (!p || p.format !== CONTENT_FORMAT || !p.data || !p.config || !Array.isArray(p.config.days)) return "這不是行程內容檔。";
+-    if (p.moneyVersion && p.moneyVersion > 2) return "此備份使用較新的金額格式，請更新程式後匯入。";
++    if (p.moneyVersion && p.moneyVersion > 3) return "此備份使用較新的金額格式，請更新程式後匯入。";
+     for (const c of CONTENT_COLS) {
+       const d = p.data[c] || {};
+       if (typeof d !== "object" || Array.isArray(d)) return "內容檔的 " + c + " 格式不對。";
+@@ -2956,10 +3030,10 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+       });
+       h += "</section>";
+     }
+-    h += '<section class="pd-sec">' + blk("<h2>實際支出（換匯、現金增減不計入）</h2><p>" + esc(summaryText(misc)) + "</p>");
++    h += '<section class="pd-sec">' + blk("<h2>個人實際支出（不含代墊、換匯與現金增減）</h2><p>" + esc(summaryText(misc)) + "</p>" + advanceSummaryHtml());
+     const ml = misc.slice().sort((a, b) => miscDayNumber(a) - miscDayNumber(b) || (a.order ?? 0) - (b.order ?? 0));
+     h += blk("<h2>花費與金流明細</h2>") + (ml.length ? ml.map((m) => {
+-      const v = cellNum(m.amt), sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.kind === "cashflow" ? "現金增減・不列支出" : m.pay, m.hint ? "預估 " + m.hint : "", m.note].filter(Boolean).join("｜");
++      const v = cellNum(m.amt), sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.kind === "cashflow" ? "現金增減・不列支出" : m.kind === "reimbursement" ? "收回代墊・" + m.pay + "・不列支出" : m.pay, m.hint ? "預估 " + m.hint : "", advanceText(m), m.note].filter(Boolean).join("｜");
+       return blk('<div class="li"><span><b>' + esc(m.label || "（未命名）") + '</b><br><small class="pd-sub">' + esc(sub) + "</small></span><span>" + esc(miscValueText(m)) + "</span></div>");
+     }).join("") : blk('<p class="pd-sub">沒有花費或換匯紀錄。</p>'));
+     // 資訊 starts a page; each of its boxes is its own block so a page break falls between them.
+diff --git a/tests/advances.test.mjs b/tests/advances.test.mjs
+new file mode 100644
+index 0000000..768aa52
+--- /dev/null
++++ b/tests/advances.test.mjs
+@@ -0,0 +1,59 @@
++import {test} from 'node:test';
++import assert from 'node:assert/strict';
++import {readFile} from 'node:fs/promises';
++import {runInNewContext} from 'node:vm';
++import {validateTripDocument} from '../lib/journal-collaboration.mjs';
++const html=await readFile(new URL('../public/trip.html',import.meta.url),'utf8'),ctx={};
++const block=n=>html.split('// BEGIN_'+n)[1].split('// END_'+n)[0];
++runInNewContext(block('MONEY_ROUTE_HELPERS')+block('FINANCE_HELPERS')+';this.h={spendingSummary,cashBalance,advanceStatus,advanceError};',ctx);
++const h=ctx.h,plain=v=>JSON.parse(JSON.stringify(v));
++const expense={id:'ride',label:'Synthetic ride',kind:'expense',cur:'PHP',amt:900,ownAmt:300,pay:'刷卡',actualTwd:480};
++const receipt={id:'paid',label:'Synthetic receipt',kind:'reimbursement',expenseId:'ride',cur:'PHP',amt:600,pay:'現金'};
++const snap={amount:2000,includedIds:[]};
++test('personal cost uses own share, full card amount survives and repayment is never income or spending',()=>{
++ const rows=[expense,receipt],v=h.spendingSummary(rows,{PHP:0.5});
++ assert.equal(v.totals.PHP,300);assert.equal(v.twd,160);assert.equal(expense.amt,900);assert.equal(expense.actualTwd,480);
++ assert.equal(h.cashBalance(snap,rows,'PHP').amount,2600);assert.deepEqual(plain(h.advanceStatus(expense,rows)),{total:600,received:600,outstanding:0,excess:0,invalid:0});
++});
++test('cash advance deducts full payment and returned cash increases it without double counting',()=>{
++ assert.equal(h.cashBalance(snap,[{...expense,pay:'現金'},receipt],'PHP').amount,1700);
++ assert.equal(h.cashBalance(snap,[expense,{...receipt,pay:'轉帳'}],'PHP').amount,2000);
++ assert.equal(h.cashBalance(snap,[expense,{...receipt,cashIncluded:true}],'PHP').amount,2000);
++ assert.equal(h.cashBalance({amount:2600,includedIds:['ride','paid']},[expense,receipt],'PHP').amount,2600);
++});
++test('uncollected and partial repayments affect receivables, never personal spending',()=>{
++ const partial={...receipt,amt:200};assert.equal(h.advanceStatus(expense,[]).outstanding,600);
++ assert.equal(h.advanceStatus(expense,[partial]).outstanding,400);assert.equal(h.spendingSummary([expense,partial],{}).totals.PHP,300);
++ assert.equal(h.advanceStatus(expense,[]).received,0);
++});
++test('legacy, zero own share and invalid share are explicit without changing old expenses',()=>{
++ assert.equal(h.spendingSummary([{amt:100,cur:'PHP'}],{PHP:0.5}).twd,50);
++ assert.equal(h.spendingSummary([{...expense,ownAmt:0}],{}).twd,0);
++ assert.deepEqual(plain(h.spendingSummary([{...expense,ownAmt:901}],{})),{totals:{},twd:0,missing:[],pending:1});
++ assert.equal(h.advanceError({id:'empty',kind:'expense',amt:null,cur:'PHP'},[]),'');
++});
++test('form checks prevent overcollection, wrong currency and destroying paid links',()=>{
++ assert.equal(h.advanceError(receipt,[expense]),'');
++ assert.ok(h.advanceError({...receipt,amt:601},[expense]));
++ assert.ok(h.advanceError({...receipt,cur:'USD'},[expense]));
++ assert.ok(h.advanceError({...receipt,expenseId:'missing'},[expense]));
++ assert.ok(h.advanceError({...expense,ownAmt:400},[expense,receipt]));
++ assert.ok(h.advanceError({...expense,cur:'USD'},[expense,receipt]));
++ assert.ok(h.advanceError({...expense,kind:'cashflow'},[expense,receipt]));
++});
++test('concurrent overcollection and orphan receipts remain visible and keep actual cash',()=>{
++ const rows=[expense,receipt,{...receipt,id:'concurrent',amt:100}];assert.equal(h.advanceStatus(expense,rows).excess,100);
++ assert.equal(h.cashBalance(snap,rows,'PHP').amount,2700);
++ assert.equal(h.cashBalance(snap,[receipt],'PHP').amount,2600);
++ const v=h.advanceStatus(expense,[{...receipt,cur:'USD'}]);assert.equal(v.invalid,1);assert.equal(v.received,0);
++});
++test('backup roundtrip retains links, gross payment, own share and resulting money',()=>{
++ const before={moneyVersion:3,data:{misc:[expense,receipt]},private:{wallet:{snapshots:{PHP:snap}}}},after=JSON.parse(JSON.stringify(before));
++ assert.deepEqual(after,before);assert.equal(h.cashBalance(after.private.wallet.snapshots.PHP,after.data.misc,'PHP').amount,2600);
++ assert.equal(h.spendingSummary(after.data.misc,{}).totals.PHP,300);
++ assert.ok(html.includes('p.moneyVersion > 3'));
++});
++test('GPT validation accepts advances and rejects impossible own amounts or missing receipt links',()=>{
++ validateTripDocument('misc/ride',expense);validateTripDocument('misc/paid',receipt);
++ for(const v of [{...expense,ownAmt:1000},{...expense,ownAmt:-1},{...expense,cur:'VND',ownAmt:0.5},{...receipt,expenseId:''},{...receipt,pay:'刷卡'},{...receipt,amt:0}])assert.throws(()=>validateTripDocument('misc/test',v));
++});
+diff --git a/tests/cloud.test.mjs b/tests/cloud.test.mjs
+index 4eae5f0..0303c42 100644
+--- a/tests/cloud.test.mjs
++++ b/tests/cloud.test.mjs
+@@ -7,7 +7,7 @@ import {CloudStore,SyncEngine} from '../public/sync-core.js';
+ const migration=await readFile(new URL('../drizzle/0000_mute_microchip.sql',import.meta.url),'utf8');
+ function database(){const sql=new DatabaseSync(':memory:');sql.exec(migration);const prepare=query=>{let args=[];const statement={bind(...v){args=v;return statement;},first(){return sql.prepare(query).get(...args)||null;},all(){return {results:sql.prepare(query).all(...args)};},run(){return sql.prepare(query).run(...args);}};return statement;};return {sql,prepare,async batch(statements){sql.exec('BEGIN');try{const out=statements.map(s=>s.all());sql.exec('COMMIT');return out;}catch(e){sql.exec('ROLLBACK');throw e;}}};}
+ function initMemory(){const s=Object.create(CloudStore.prototype);s.stores=Object.fromEntries(['docs','revisions','queue','conflicts','history','meta','assets','assetJobs'].map(k=>[k,new Map()]));s.get=async(k,id)=>structuredClone(s.stores[k].get(id));s.all=async k=>structuredClone([...s.stores[k]]);s.tx=async(stores,mode,fn)=>{let result;const t={objectStore:k=>({put:(v,id)=>s.stores[k].set(id,structuredClone(v)),delete:id=>s.stores[k].delete(id)})};fn(t,(k,id,cb)=>cb(structuredClone(s.stores[k].get(id))),v=>result=v);return result;};return s;}
+-function env(){const db=database(),files=new Map(),bucket={put:async(k,b)=>files.set(k,new Uint8Array(b)),get:async k=>files.has(k)?{body:files.get(k)}:null};const user={userId:'owner-A',email:'owner@example.test',displayName:'Owner'};const context={db,bucket,user,ownerEmail:user.email};const request=(route,method='GET',body,userOverride=user,origin='https://journal.test')=>journalAPI(new Request('https://journal.test/api/journal/'+route,{method,headers:{origin,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})}),{...context,user:userOverride});const api={session:async()=>{},push:async op=>(await request('push','POST',op)).json(),document:async path=>(await request('document?path='+encodeURIComponent(path))).json(),changes:async after=>(await request('changes?after='+after)).json(),assets:async()=>[],assetUpload:async()=>{}};return {db,files,bucket,user,context,request,api};}
++function env(){const db=database(),files=new Map(),bucket={put:async(k,b)=>files.set(k,new Uint8Array(b)),get:async k=>files.has(k)?{body:files.get(k)}:null};const user={userId:'owner-A',email:'owner@example.test',displayName:'Owner'};const context={db,bucket,user,ownerEmail:user.email};const request=(route,method='GET',body,userOverride=user,origin='https://journal.test')=>journalAPI(new Request('https://journal.test/api/journal/'+route,{method,headers:{origin,'X-Journal-Money-Version':'3',...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})}),{...context,user:userOverride});const api={session:async()=>{},push:async op=>(await request('push','POST',op)).json(),document:async path=>(await request('document?path='+encodeURIComponent(path))).json(),changes:async after=>(await request('changes?after='+after)).json(),assets:async()=>[],assetUpload:async()=>{}};return {db,files,bucket,user,context,request,api};}
+ const op=(path,value,base=0,id=crypto.randomUUID())=>({path,value,base,id,deleted:value===null});
+ test('anonymous, other account, missing owner config and cross-origin writes fail closed',async()=>{const e=env();assert.equal((await e.request('changes', 'GET',null,null)).status,401);assert.equal((await e.request('changes','GET',null,{userId:'B',email:'friend@example.test'})).status,403);assert.equal((await e.request('push','POST',op('items/a',{title:'x'}),e.user,'https://evil.test')).status,403);assert.equal((await journalAPI(new Request('https://journal.test/api/journal/session'),{...e.context,ownerEmail:''})).status,403);});
+ test('CAS create/update/delete preserves revisions and rejects stale overwrite',async()=>{const e=env();assert.equal((await e.api.push(op('items/a',{title:'first'}))).revision,1);assert.equal((await e.api.push(op('items/a',{title:'second'},1))).revision,2);assert.equal((await e.api.push(op('items/a',{title:'stale'},1))).ok,0);assert.equal((await e.api.document('items/a')).value.title,'second');assert.equal((await e.api.push(op('items/a',null,2))).revision,3);assert.equal((await e.api.document('items/a')).deleted,1);});
+@@ -74,3 +74,29 @@ test('a corrected post-count exchange recomputes both wallets offline and on ano
+   assert.deepEqual(await balances(b),[75,2000]);assert.equal((await b.get('docs','misc/fx')).cashIncluded,false);
+   assert.deepEqual(await a.get('docs','private/config'),{wallet:{snapshots}});
+ });
++
++test('offline advance and cash repayment converge without exposing finance to friends',async()=>{
++ const {runInNewContext}=await import('node:vm'),html=await readFile(new URL('../public/trip.html',import.meta.url),'utf8'),h={};
++ const block=n=>html.split('// BEGIN_'+n)[1].split('// END_'+n)[0];runInNewContext(block('MONEY_ROUTE_HELPERS')+block('FINANCE_HELPERS')+';this.spending=spendingSummary;this.cash=cashBalance;',h);
++ const e=env(),a=initMemory(),b=initMemory(),ride={label:'PRIVATE_ADVANCE',kind:'expense',cur:'PHP',amt:900,ownAmt:300,pay:'刷卡'},paid={label:'PRIVATE_RECEIPT',kind:'reimbursement',expenseId:'ride',cur:'PHP',amt:600,pay:'現金'};
++ await a.writeMany([{path:'misc/ride',value:ride},{path:'misc/paid',value:paid}]);
++ await new SyncEngine(a,{...e.api,session:async()=>{throw Error('offline');}}).sync();assert.equal((await a.all('queue')).length,2);
++ await new SyncEngine(a,e.api).sync();await new SyncEngine(b,e.api).sync();
++ const rows=(await b.all('docs')).map(([p,v])=>({id:p.slice(5),...v}));assert.equal(h.spending(rows,{PHP:0.5}).twd,150);assert.equal(h.cash({amount:2000,includedIds:[]},rows,'PHP').amount,2600);
++ assert.equal((await b.get('docs','misc/ride')).amt,900);assert.equal((await b.get('docs','misc/paid')).expenseId,'ride');
++ const share=await(await e.request('shares','POST',{})).json(),view=await(await e.request('share/view','POST',{token:share.token},null)).json();assert.ok(!/PRIVATE_|ownAmt|expenseId|900|600/.test(JSON.stringify(view)));
++});
++test('old client and old queued writes cannot silently erase newly recorded advances',async()=>{
++ const e=env(),value={label:'advance',kind:'expense',cur:'PHP',amt:900,ownAmt:300,pay:'刷卡'};
++ assert.equal((await e.request('push','POST',{...op('misc/ride',value),moneyVersion:3})).status,200);
++ assert.equal((await e.request('push','POST',op('misc/ride',{label:'old form',amt:900,cur:'PHP'},1))).status,426);
++ assert.equal((await e.api.document('misc/ride')).value.ownAmt,300);
++ assert.equal((await e.request('push','POST',op('misc/ride',null,1))).status,426);
++ assert.equal((await e.request('push','POST',{...op('misc/ride',{...value,ownAmt:400},1),moneyVersion:3})).status,200);
++});
++test('incompatible pending advance edits preserve both versions for explicit resolution',async()=>{
++ const e=env(),s=initMemory();await s.write('misc/ride',{label:'local',amt:900});
++ await e.api.push({...op('misc/ride',{label:'cloud',amt:900,ownAmt:300}),moneyVersion:3});
++ await new SyncEngine(s,{...e.api,push:async()=>{throw Object.assign(Error('update app'),{status:426});}}).sync();
++ assert.equal((await s.get('conflicts','misc/ride')).remote.value.ownAmt,300);assert.equal((await s.get('docs','misc/ride')).label,'local');assert.equal((await s.all('queue')).length,1);
++});
+diff --git a/tests/collaboration.test.mjs b/tests/collaboration.test.mjs
+index 4094f30..930d0c1 100644
+--- a/tests/collaboration.test.mjs
++++ b/tests/collaboration.test.mjs
+@@ -21,3 +21,10 @@ test('deleted document restoration preserves content, and offline device writes
+ test('explicit finalization, expiry, owner-scoped proposals and restricted paths are enforced',async()=>{const e=setup(),p=await proposal(e,[change('items/a',item('A'))]);await assert.rejects(()=>e.tool('commit_trip_update',{proposal_id:p.proposal_id}),{status:400});await assert.rejects(()=>collaborationTool('commit_trip_update',{proposal_id:p.proposal_id,confirmation:'已定案'},{...e.ctx,user:{...e.ctx.user,userId:'other'}}),{status:404});e.db.sql.prepare('UPDATE journal_proposals SET expires=?').run('2000-01-01');await assert.rejects(()=>commit(e,p),{status:409});await assert.rejects(()=>proposal(e,[change('private/gpt-changes/forged',{})]),{status:400});await assert.rejects(()=>proposal(e,[change('items/a',JSON.parse('{"title":"bad","__proto__":{"admin":true}}'))]),{status:400});});
+ test('data validation matches solo journey, multiple locations, whole VND and separate cash movements',()=>{const cfg={title:'trip',start:'2026-10-30',regions:{crk:{name:'Clark'},bag:{name:'Baguio'}},days:[{locations:['crk','bag'],region:'crk'}],segments:[{id:'a',name:'Mountain',startDay:1}]};assert.equal(validateTripDocument('meta/config',cfg),cfg);assert.throws(()=>validateTripDocument('meta/config',{...cfg,start:'2026-02-30'}));assert.throws(()=>validateTripDocument('items/a',{...item('A'),budget:[{cur:'VND',amt:1.5}]}));assert.throws(()=>validateTripDocument('misc/a',{label:'FX',kind:'exchange',cur:'USD',amt:100,toCur:'PHP',toAmt:null}));assert.throws(()=>validateTripDocument('items/a',{...item('A'),day:71},70));assert.throws(()=>validateTripDocument('items/a',{...item('A'),url:'javascript:alert(1)'}));validateTripDocument('misc/a',{label:'FX',kind:'exchange',cur:'USD',amt:100,toCur:'PHP',toAmt:5700});});
+ test('audit and sources remain private when friend itinerary is projected',async()=>{const e=setup(),p=await proposal(e,[change('items/a',item('Walk'))]);await commit(e,p);const rows=e.db.sql.prepare('SELECT path,value,deleted FROM journal_documents').all(),shared=publicItinerary(rows);assert.equal(shared.items.length,1);assert.ok(!JSON.stringify(shared).includes('User finalized'));assert.ok(!JSON.stringify(shared).includes('before'));});
++
++test('finalized GPT advance and repayment preserve the gross charge, can undo together, and remain private',async()=>{
++ const e=setup(),p=await proposal(e,[change('misc/ride',{label:'Private ride',kind:'expense',cur:'PHP',amt:900,ownAmt:300,pay:'刷卡'}),change('misc/paid',{label:'Private receipt',kind:'reimbursement',expenseId:'ride',cur:'PHP',amt:600,pay:'現金'})]);
++ await commit(e,p);assert.equal((await e.get('misc/ride')).value.amt,900);assert.equal((await e.get('misc/ride')).value.ownAmt,300);assert.equal((await e.get('misc/paid')).value.expenseId,'ride');
++ assert.ok(!JSON.stringify(publicItinerary(e.db.sql.prepare('SELECT path,value,deleted FROM journal_documents').all())).includes('Private'));
++ const undo=await e.tool('prepare_undo_trip_update',{update_id:p.proposal_id});await commit(e,undo);assert.equal((await e.get('misc/ride')).deleted,1);assert.equal((await e.get('misc/paid')).deleted,1);
++});

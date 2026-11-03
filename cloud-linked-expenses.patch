@@ -1,0 +1,323 @@
+diff --git a/docs/linked-expenses.md b/docs/linked-expenses.md
+new file mode 100644
+index 0000000..3400627
+--- /dev/null
++++ b/docs/linked-expenses.md
+@@ -0,0 +1,20 @@
++# Linked itinerary and expenses
++
++An itinerary card describes a place/activity; a private `misc` expense describes a payment. `misc.itineraryId` links them by stable item ID. Multiple payments can link to one card. Name and date are copied when starting a new payment, then remain the payment's historical description/date: renaming or rescheduling the itinerary does not silently rewrite the ledger.
++
++## Use
++
++- In the itinerary editor, **儲存並記花費** saves the card and opens a payment with name/date already filled. Existing cards have **記花費** and a count/summary of linked payments.
++- In a payment, **連結行程** can select an existing card or **＋ 同時新增行程**. Creating both uses the payment name/date and optional itinerary time, category and URL. A journey date is required; selecting an existing card never overwrites an existing payment's description or historical date.
++- The new card has an empty budget, no private payment note, and no copied amount. Its actual payment is counted once through `misc`; explicit itinerary budgets remain separate estimates. Cash/card, currency, actual TWD, receipts and wallet behavior retain their existing semantics.
++- Unlinking or deleting either side does not delete the other side. Missing cards are labeled rather than hiding payments. Exchange/cashflow records do not create itinerary links.
++
++## Durability and privacy
++
++Creating both commits the two documents plus outbox entries in one IndexedDB transaction. Draft IDs are stable during retries. Cloud upload retains the existing per-document idempotent operations and revision conflicts; it is eventual synchronization, not an atomic multi-document server transaction. A temporary missing link remains readable while the second document is pending or conflicted. Backups preserve IDs and links without a migration.
++
++The public itinerary projection retains its strict field allowlist; it never follows `misc` links. Payment amounts, notes, receipts, balances and the links themselves are excluded. Linked spending summaries/buttons render only for the owner.
++
++## Validation
++
++28 cloud/collaboration tests pass, including linked offline writes, restart/retry after a lost response, second-device convergence, no duplicate records, no copied budget, privacy and independent deletion. The existing 28 segment/money/wallet tests are run separately. Local browser testing covers creating both from a payment, recording multiple payments from one card, and saving a new itinerary directly into its prefilled payment form. Physical phone/tablet airplane-mode testing remains a user trial check.
+diff --git a/public/cloud.js b/public/cloud.js
+index 32cacf3..ec12c7c 100644
+--- a/public/cloud.js
++++ b/public/cloud.js
+@@ -16,6 +16,13 @@
+   const broadcast=p=>{channel?.postMessage({path:p});};
+   let timer;const schedule=()=>{clearTimeout(timer);timer=setTimeout(()=>sync(),500);};
+   async function write(p,v){await repo.write(p,clone(v),editBases.get(p));editBases.delete(p);await changed(p);broadcast(p);status({phase:'pending',...await engine.counts()});schedule();}
++  async function writeMany(changes){
++    await repo.writeMany(changes.map(c=>({...c,expected:editBases.get(c.path)??c.expected})));
++    // Refresh every local document before notifying the UI about either record.
++    for(const {path,value}of changes){editBases.delete(path);if(value===null)docs.delete(path);else docs.set(path,clone(value));}
++    for(const {path}of changes){await changed(path);broadcast(path);}
++    status({phase:'pending',...await engine.counts()});schedule();
++  }
+   const merge=(a,b)=>{const out={...a};for(const [k,v]of Object.entries(b))out[k]=v&&typeof v==='object'&&!Array.isArray(v)?merge(out[k]||{},v):v;return out;};
+   const doc=p=>({id:p.split('/').at(-1),get:async()=>docSnap(p),set:v=>write(p,v),update:v=>docs.has(p)?write(p,merge(docs.get(p),v)):Promise.reject(new Error('找不到此筆資料。')),delete:()=>write(p,null),onSnapshot:fn=>sub(docSubs,p,fn,()=>docSnap(p))});
+   const collection=p=>({doc:id=>doc(p+'/'+id),get:async()=>colSnap(p),add:async v=>{const d=doc(p+'/'+crypto.randomUUID());await d.set(v);return d;},onSnapshot:fn=>sub(subscriptions,p,fn,()=>colSnap(p))});
+@@ -64,7 +71,7 @@
+     for(const b of bar.querySelectorAll('button'))b.disabled=false;
+     if (navigator.serviceWorker) navigator.serviceWorker.register("/sw.js").catch(()=>{});
+     const assets={upload:async b=>putAsset(Array.from(crypto.getRandomValues(new Uint8Array(16)),x=>x.toString(16).padStart(2,'0')).join(''),b),list:async()=>({assets:[...blobs].map(([id,b])=>({id,url:urls.get(id),sizeBytes:b.size,contentType:b.type})),usage:{}}),delete:async id=>{await repo.asset(id,null);blobs.delete(id);if(urls.has(id))URL.revokeObjectURL(urls.get(id));urls.delete(id);broadcast('assets');schedule();}};
+-    return {db:{doc,collection},user:{isOwner:async()=>true,canEdit:async()=>true,can:async()=>true,id:async()=>'me',me:async()=>({id:'me',name:identity.displayName}),profiles:async()=>({})},assets,downloads:{save:async({filename,data})=>download(filename,data)}};
++    return {db:{doc,collection,writeMany},user:{isOwner:async()=>true,canEdit:async()=>true,can:async()=>true,id:async()=>'me',me:async()=>({id:'me',name:identity.displayName}),profiles:async()=>({})},assets,downloads:{save:async({filename,data})=>download(filename,data)}};
+   }
+   const ready=start();window.claude={use:async name=>(await ready)[name]||null};
+ })();
+diff --git a/public/sw.js b/public/sw.js
+index 7d338ea..1bd326c 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,4 +1,4 @@
+-const VERSION='journal-sites-shell-v3';
++const VERSION='journal-sites-shell-v4';
+ const SHELL=['/trip.html','/cloud.js','/sync-core.js','/manifest.webmanifest','/icon-192.png','/icon-512.png','/vendor/leaflet.js','/vendor/html2canvas.min.js','/vendor/jspdf.umd.min.js'];
+ self.addEventListener('install',e=>e.waitUntil(caches.open(VERSION).then(c=>Promise.all(SHELL.map(p=>c.add(p))))));
+ self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('journal-sites-shell-')&&k!==VERSION).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+diff --git a/public/sync-core.js b/public/sync-core.js
+index 4137114..db08392 100644
+--- a/public/sync-core.js
++++ b/public/sync-core.js
+@@ -4,7 +4,12 @@ export class CloudStore {
+   get(store,key){return this.tx([store],'readonly',(t,g,done)=>g(store,key,done));}
+   all(store){return this.tx([store],'readonly',(t,g,done)=>{const s=t.objectStore(store),keys=s.getAllKeys(),values=s.getAll();values.onsuccess=()=>done(keys.result.map((k,i)=>[k,values.result[i]]));});}
+   set(store,key,value){return this.tx([store],'readwrite',t=>t.objectStore(store).put(value,key));}
+-  async write(path,value,expected){await this.tx(['docs','revisions','queue'],'readwrite',(t,g)=>g('revisions',path,rev=>{if(value===null)t.objectStore('docs').delete(path);else t.objectStore('docs').put(value,path);t.objectStore('queue').put({id:crypto.randomUUID(),path,base:Number.isSafeInteger(expected)?expected:rev||0,value,deleted:value===null},path);}));}
++  async write(path,value,expected){return this.writeMany([{path,value,expected}]);}
++  async writeMany(changes){
++    if(!Array.isArray(changes)||!changes.length||new Set(changes.map(c=>c.path)).size!==changes.length)throw new Error('請提供不同路徑的紀錄。');
++    const prepared=changes.map(c=>({...structuredClone(c),id:crypto.randomUUID()}));
++    await this.tx(['docs','revisions','queue'],'readwrite',(t,g)=>{for(const {path,value,expected,id}of prepared)g('revisions',path,rev=>{if(value===null)t.objectStore('docs').delete(path);else t.objectStore('docs').put(value,path);t.objectStore('queue').put({id,path,base:Number.isSafeInteger(expected)?expected:rev||0,value,deleted:value===null},path);});});
++  }
+   async ack(sent,revision){await this.tx(['revisions','queue'],'readwrite',(t,g)=>g('queue',sent.path,current=>{t.objectStore('revisions').put(revision,sent.path);if(current?.id===sent.id)t.objectStore('queue').delete(sent.path);else if(current)t.objectStore('queue').put({...current,base:revision},sent.path);}));}
+   async conflict(path,remote){await this.tx(['docs','conflicts'],'readwrite',(t,g)=>g('docs',path,local=>t.objectStore('conflicts').put({path,local:local??null,remote,at:new Date().toISOString()},path)));}
+   async applyPage(page){await this.tx(['docs','queue','revisions','conflicts','meta'],'readwrite',(t,g)=>{for(const row of page.docs){g('queue',row.path,pending=>{if(pending){if(row.revision>pending.base)g('docs',row.path,local=>t.objectStore('conflicts').put({path:row.path,local:local??null,remote:row,at:new Date().toISOString()},row.path));return;}g('revisions',row.path,revision=>{if(row.revision<=(revision||0))return;if(row.deleted)t.objectStore('docs').delete(row.path);else t.objectStore('docs').put(row.value,row.path);t.objectStore('revisions').put(row.revision,row.path);});});}t.objectStore('meta').put(page.cursor,'cursor');});}
+diff --git a/public/trip.html b/public/trip.html
+index 091dbb4..97b6abf 100644
+--- a/public/trip.html
++++ b/public/trip.html
+@@ -261,6 +261,7 @@ a { color: inherit; }
+ .pv p { margin: 0; font-size: 12.5px; line-height: 1.45; opacity: .75; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+ @media (min-width: 520px) { .pv { grid-template-columns: 128px minmax(0, 1fr); } .pv img { width: 128px; } }
+ .chk { border: 1.5px solid currentColor; background: transparent; border-radius: 999px; padding: 2px 10px; font-size: 12px; margin-left: auto; }
++.chk[data-act="expenses"] { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+ .card.done .chk { background: var(--card-fg); color: var(--card); border-color: var(--card-fg); }
+ 
+ .addrow { border: 1.5px dashed var(--line); border-radius: 22px; background: transparent; padding: 18px; color: var(--muted); font-size: 15px; width: 100%; }
+@@ -724,6 +725,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     <div class="actions">
+       <button type="button" class="btn danger" id="f-del" hidden>刪除</button>
+       <button type="button" class="btn ghost" id="f-cancel">取消</button>
++      <button type="submit" class="btn ghost" id="f-expense">儲存並記花費</button>
+       <button type="submit" class="btn" id="f-save">儲存</button>
+     </div>
+   </form>
+@@ -802,6 +804,15 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     <label>紀錄類型<select class="field" id="ms-kind"><option value="expense">花費</option><option value="exchange">換匯（不列支出）</option><option value="cashflow">現金增減（不列支出）</option></select></label>
+     <label>名稱<input class="field" id="ms-label" placeholder="例如：午餐／換匯" autocomplete="off"></label>
+     <label>日期<select class="field" id="ms-day"></select></label>
++    <section id="ms-link-wrap">
++      <label>連結行程<select class="field" id="ms-itinerary"></select></label>
++      <p class="fine" id="ms-link-help">可連結既有行程，或用這筆名稱與日期同時新增行程；花費金額仍只算一次。</p>
++      <div id="ms-new-item" hidden>
++        <div class="grid2"><label>行程時間（選填）<input class="field" id="ms-item-time" type="time"></label><label>行程類別<select class="field" id="ms-item-cat"></select></label></div>
++        <label>餐廳／地點連結（選填）<input class="field" id="ms-item-url" type="url" placeholder="https://…"></label>
++        <p class="fine">行程沿用上方名稱與日期。付款方式、金額和花費備註只留在私人花費；分享時朋友只看到行程資訊。</p>
++      </div>
++    </section>
+     <div class="seg" id="ms-cur" role="group" aria-label="幣別"><button type="button" data-cur="USD">US$ 美金</button><button type="button" data-cur="PHP">₱ 披索</button><button type="button" data-cur="TWD">NT$ 台幣</button><button type="button" data-cur="VND">₫ 越南盾</button><button type="button" data-cur="JPY" id="ms-legacy-jpy" hidden>¥ 舊日幣</button></div>
+     <label>金額（換匯時填付出金額）<input class="field ss-in" id="ms-amt" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="還沒花可先空著"></label>
+     <div class="seg" id="ms-pay" role="group" aria-label="付款方式"><button type="button" data-pay="現金">現金</button><button type="button" data-pay="刷卡">刷卡</button><button type="button" data-pay="待確認">待確認</button></div>
+@@ -1542,6 +1553,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+         (it.pdf && Array.isArray(it.pdf.pages) && it.pdf.pages.length ? '<button type="button" class="pdfbtn" data-pdf="' + esc(it.id) + '">📄 ' + esc(it.pdf.name || "PDF") + "</button>"
+           : it.pdf && typeof it.pdf.url === "string" && /^\/_blob\/[0-9a-f]+$/.test(it.pdf.url) ? '<a class="pdfbtn" href="' + esc(it.pdf.url) + '" target="_blank" rel="noopener">📄 ' + esc(it.pdf.name || "PDF") + "</a>" : "") + addrHtml(it) + trainsHtml(it) + infoHtml(it) + link +
+         '<div class="meta">' + cost + pick +
++        (isOwner && miscLoaded ? '<button type="button" class="chk" data-act="expense">記花費</button>' + linkedExpenseHtml(it) : '') +
+         (canWrite ? '<button type="button" class="chk" data-act="done">' + (it.done ? "已完成" : "完成") + '</button><button type="button" class="chk" data-act="edit">編輯</button>' : "") +
+         "</div></div></div></div>";
+     }).join("");
+@@ -1549,7 +1561,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+   }
+ 
+   const num = (v) => (typeof v === "number" && isFinite(v) && v > 0 ? v : 0);
+-  const ntd = (n) => "NT$" + n.toLocaleString("en-US", { maximumFractionDigits: 2 });
++  const ntd = (n) => "NT$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+   const moneyOf = (it) => budgetEntries(it).map((b) => originalMoney(b.cur, b.amt)).join(" + ");
+   function costHtml(it) { const total = moneyOf(it); return total ? '<span class="yen">預算 ' + esc(total) + '</span>' : ""; }
+   let openCats = new Set();
+@@ -1816,7 +1828,17 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+ 
+   // 零星花費: spending outside the split list (shrine stamps, parking, small tickets), visible to and kept by the owner only.
+   // Each doc: label, day ("11/8", or "" for the whole trip), amt (actual, may be null), cur, hint (estimate text), pay, note.
+-  let misc = [], miscLoaded = false, mEdit = null, mDelArmed = false;
++  let misc = [], miscLoaded = false, mEdit = null, mDelArmed = false, mDraftId = null, mItemDraftId = null, mAutoFill = {};
++  const linkedExpenses = (id) => misc.filter((m) => (!m.kind || m.kind === 'expense') && m.itineraryId === id);
++  function linkedExpenseHtml(it) {
++    const rows = linkedExpenses(it.id);
++    return rows.length ? '<button type="button" class="chk" data-act="expenses">已記 ' + rows.length + ' 筆｜' + esc(summaryText(rows)) + '</button>' : '';
++  }
++  function expenseLinkOptions(selected) {
++    const sorted = items.slice().sort((a,b) => a.day-b.day || String(a.time||'').localeCompare(String(b.time||'')));
++    $("ms-itinerary").innerHTML = '<option value="">不連結行程</option><option value="__new">＋ 同時新增行程</option>' + sorted.map(it => '<option value="' + esc(it.id) + '">D' + esc(it.day) + ' ' + esc(it.title) + '</option>').join('') + (selected && !items.some(it => it.id === selected) ? '<option value="' + esc(selected) + '">原連結行程已移除／尚未同步</option>' : '');
++    $("ms-itinerary").value = selected || '';
++  }
+   const originalMoney = (cur, amount) => cur + " " + amount.toLocaleString("en-US", { maximumFractionDigits: ["JPY", "VND"].includes(cur) ? 0 : 2 });
+   const estimateRates = () => ({ ...(cfg.estimateRates || {}), JPY: RATE });
+   function financialText(v) {
+@@ -1878,7 +1900,9 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     const list = misc.slice().sort((a, b) => miscDayNumber(a) - miscDayNumber(b) || (a.order ?? 0) - (b.order ?? 0));
+     groupedRecords($("misc"), list, miscDayNumber, (m) => {
+       const sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.kind === "cashflow" ? "現金增減・不列支出" : m.pay, m.note].filter(Boolean).join("｜");
+-      return '<div class="mitem"><button type="button" class="mrow" data-misc="' + esc(m.id) + '"><span><b>' + esc(m.label || "（未命名）") + '</b><small>' + esc(sub) + '</small></span><span class="mv">' + esc(miscValueText(m)) + '</span></button>' + rcStrip("misc", m) + '</div>';
++      const linked = m.itineraryId && items.find(it => it.id === m.itineraryId);
++      const link = m.itineraryId ? (linked ? '<button type="button" class="btn ghost" data-misc-item="' + esc(linked.id) + '">行程：' + esc(linked.title) + '</button>' : '<small class="fine">原連結行程已移除／尚未同步；花費仍保留。</small>') : '';
++      return '<div class="mitem" data-expense-id="' + esc(m.id) + '"><button type="button" class="mrow" data-misc="' + esc(m.id) + '"><span><b>' + esc(m.label || "（未命名）") + '</b><small>' + esc(sub) + '</small></span><span class="mv">' + esc(miscValueText(m)) + '</span></button>' + link + rcStrip("misc", m) + '</div>';
+     });
+     if (!list.length) $("misc").innerHTML = '<p class="fine">還沒有紀錄。</p>';
+     renderDailySpending();
+@@ -1887,13 +1911,16 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     const kind = $("ms-kind").value, exchange = kind === "exchange";
+     $("ms-exchange").hidden = !exchange; $("ms-pay").hidden = kind !== "expense"; $("ms-actual-wrap").hidden = kind !== "expense";
+     $("ms-direction-wrap").hidden = kind !== "cashflow";
++    $("ms-link-wrap").hidden = kind !== 'expense';
++    $("ms-new-item").hidden = kind !== 'expense' || $("ms-itinerary").value !== '__new';
+     const rate = effectiveRate(currencyAmount($("ms-amt").value, segVal("ms-cur", "cur")), currencyAmount($("ms-to-amt").value, $("ms-to-cur").value));
+     $("ms-rate").textContent = segVal("ms-cur", "cur") === $("ms-to-cur").value ? "請選擇不同的付出與收到幣別。" : rate ? "成交匯率：1 " + segVal("ms-cur", "cur") + " = " + rate.toLocaleString("en-US", { maximumFractionDigits: 8 }) + " " + $("ms-to-cur").value : "填入實付與實收金額，自動試算成交匯率。";
+   }
+-  function openMisc(m) {
++  function openMisc(m, itinerary) {
+     if(m) window.__tripCloudBeginEdit?.("misc/"+m.id);
+     if (!isOwner || !db) return;
+     mEdit = m || null; mDelArmed = false;
++    mDraftId = m ? m.id : crypto.randomUUID(); mItemDraftId = crypto.randomUUID();
+     $("ms-title").textContent = m ? "修改花費／金流" : "新增花費／金流";
+     $("ms-kind").value = m && ["exchange", "cashflow"].includes(m.kind) ? m.kind : "expense";
+     $("ms-direction").value = m && m.direction === "out" ? "out" : "in"; $("ms-cash-included").checked = !!(m && m.cashIncluded);
+@@ -1911,6 +1938,12 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     $("ms-amt").value = m && cellNum(m.amt) !== null ? String(m.amt) : "";
+     $("ms-hint").value = m ? m.hint || "" : "";
+     $("ms-note").value = m ? m.note || "" : "";
++    expenseLinkOptions(m && m.itineraryId || itinerary && itinerary.id);
++    $("ms-item-time").value = ''; $("ms-item-url").value = '';
++    $("ms-item-cat").innerHTML = Object.entries(CATS).map(([k,v]) => '<option value="'+esc(k)+'">'+esc(v)+'</option>').join('');
++    $("ms-item-cat").value = 'food';
++    if (itinerary) { $("ms-label").value = itinerary.title || ''; $("ms-day").value = isoOf(dateOf(itinerary.day)); }
++    mAutoFill = {label:$("ms-label").value,date:$("ms-day").value};
+     $("ms-del").hidden = !m; $("ms-del").textContent = "刪除";
+     $("ms-err").hidden = true;
+     updateExchangeFields();
+@@ -1925,7 +1958,21 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     finally { $("ms-save").disabled = $("ms-del").disabled = false; }
+   }
+   $("misc-add").addEventListener("click", () => openMisc(null));
+-  $("misc").addEventListener("click", (e) => { const b = e.target.closest("[data-misc]"); if (b) openMisc(misc.find((m) => m.id === b.dataset.misc)); });
++  $("misc").addEventListener("click", (e) => {
++    const link = e.target.closest('[data-misc-item]');
++    if (link) { const it=items.find(x=>x.id===link.dataset.miscItem); if(it) { day=it.day; setTab('plan'); renderDays(); renderPlan(); document.querySelector('.card[data-id="'+CSS.escape(it.id)+'"]')?.scrollIntoView({block:'center'}); } return; }
++    const b = e.target.closest("[data-misc]"); if (b) openMisc(misc.find((m) => m.id === b.dataset.misc));
++  });
++  $("ms-itinerary").addEventListener('change', () => {
++    const it=items.find(x=>x.id===$("ms-itinerary").value);
++    // Preserve manually entered descriptions and historical payment dates.
++    if(it && !mEdit) {
++      if(!$("ms-label").value.trim() || $("ms-label").value===mAutoFill.label) $("ms-label").value=it.title||'';
++      if(!$("ms-day").value || $("ms-day").value===mAutoFill.date) $("ms-day").value=isoOf(dateOf(it.day));
++      mAutoFill={label:$("ms-label").value,date:$("ms-day").value};
++    }
++    updateExchangeFields();
++  });
+   $("msheet").addEventListener("click", (e) => {
+     const b = e.target.closest(".seg button");
+     if (b) b.parentElement.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+@@ -1950,7 +1997,16 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     const invalid = ($("ms-amt").value.trim() && body.amt === null) || (body.kind === "expense" && $("ms-actual").value.trim() && body.actualTwd === null) || (body.kind === "exchange" && (!effectiveRate(body.amt, body.toAmt) || body.cur === body.toCur)) || (body.kind === "cashflow" && !(body.amt > 0));
+     if (invalid) { $("ms-err").textContent = "請填有效金額（越南盾、日幣為整數，其餘最多兩位小數）；現金增減及換匯金額須大於 0，換匯幣別須不同。"; $("ms-err").hidden = false; return; }
+     if (!body.label) { $("ms-err").textContent = "請填名稱。"; $("ms-err").hidden = false; return; }
+-    miscWrite(() => (mEdit ? db.doc("misc/" + mEdit.id).set(body) : db.collection("misc").add(body)));
++    const link = body.kind === 'expense' ? $("ms-itinerary").value : '';
++    const newDay = isoTripDay(body.date);
++    if (link === '__new' && !newDay) { $("ms-err").textContent = '同時新增行程時，請選擇旅程內的日期。'; $("ms-err").hidden = false; return; }
++    body.itineraryId = link === '__new' ? mItemDraftId : link || null;
++    miscWrite(async () => {
++      const changes = [{path:'misc/' + mDraftId,value:body}];
++      if (link === '__new') changes.unshift({path:'items/' + mItemDraftId,expected:0,value:{title:body.label,day:newDay,time:$("ms-item-time").value,cat:$("ms-item-cat").value,url:$("ms-item-url").value.trim(),note:'',budget:[],done:false}});
++      if (changes.length > 1) { if(!db.writeMany) throw new Error('請重新整理以載入行程連動功能。'); await db.writeMany(changes); }
++      else await db.doc(changes[0].path).set(body);
++    });
+   });
+   $("ms-del").addEventListener("click", () => {
+     if (!mEdit) return;
+@@ -2523,6 +2579,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     $("f-move").value = it && it.move && it.move.text ? it.move.text : "";
+     $("f-url").value = it ? it.url || "" : "";
+     $("f-del").hidden = !it;
++    $("f-expense").hidden = !isOwner;
+     $("f-del").textContent = "刪除";
+     $("f-err").hidden = true;
+     $("scrim").hidden = false;
+@@ -2564,14 +2621,18 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     if (md || mv) body.move = { mode: md || "rest", text: mv || ($("f-mode").selectedOptions[0] || {}).textContent || "" };
+     if (!body.title) return;
+     $("f-save").disabled = true;
++    $("f-expense").disabled = true;
+     try {
++      let savedId = editing && editing.id;
+       if (editing) await db.doc("items/" + editing.id).set(body);
+-      else await db.collection("items").add(body);
++      else savedId = (await db.collection("items").add(body)).id;
+       day = body.day;
+       closeSheet();
+       render();
++      if(ev.submitter?.id === 'f-expense') openMisc(null,{id:savedId,...body});
+     } catch (e) { showErr(e); }
+     $("f-save").disabled = false;
++    $("f-expense").disabled = false;
+   });
+   $("f-cancel").addEventListener("click", closeSheet);
+   $("scrim").addEventListener("click", (e) => { if (e.target === $("scrim")) closeSheet(); });
+@@ -2606,6 +2667,13 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     const it = items.find((x) => x.id === id);
+     if (!it) return;
+     if (btn.dataset.act === "edit") return openSheet(it);
++    if (btn.dataset.act === 'expense') return openMisc(null,it);
++    if (btn.dataset.act === 'expenses') {
++      const rows=linkedExpenses(it.id); if(rows.length===1) return openMisc(rows[0]);
++      setTab('cost'); const target=rows.length && document.querySelector('[data-expense-id="'+CSS.escape(rows[0].id)+'"]');
++      if(target) { for(let p=target.parentElement;p;p=p.parentElement) if(p.tagName==='DETAILS')p.open=true; target.scrollIntoView({block:'center'}); }
++      return;
++    }
+     btn.disabled = true;
+     if (btn.dataset.act === "plan") {
+       const prev = planSel;
+@@ -3012,6 +3080,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+       misc = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+       miscLoaded = true;
+       renderMisc();
++      renderPlan();
+     }, () => {});
+     // Trip config: meta/config for everyone, private/config for the owner. With neither stored, the example shows.
+     let privData = null;
+diff --git a/tests/cloud.test.mjs b/tests/cloud.test.mjs
+index 705edba..84799a3 100644
+--- a/tests/cloud.test.mjs
++++ b/tests/cloud.test.mjs
+@@ -27,3 +27,32 @@ test('an editor opened before a background pull keeps its original revision and
+ test('offline shell covers the production clean URL without caching private APIs',async()=>{const {runInNewContext}=await import('node:vm');const listeners={},puts=[],source=await readFile(new URL('../public/sw.js',import.meta.url),'utf8'),cached=new Response('offline shell');runInNewContext(source,{URL,Response,Promise,location:{origin:'https://journal.test'},self:{addEventListener:(k,f)=>listeners[k]=f},caches:{match:async key=>key==='/trip.html'?cached:null,open:async()=>({put:(...args)=>puts.push(args)})},fetch:async()=>{throw new Error('offline');}});let result;listeners.fetch({request:new Request('https://journal.test/trip'),respondWith:p=>result=p});assert.equal(await(await result).text(),'offline shell');result=undefined;listeners.fetch({request:new Request('https://journal.test/api/journal/session'),respondWith:p=>result=p});assert.equal(result,undefined);});
+ 
+ test('share and manual sync callers wait for the same in-flight synchronization',async()=>{const e=env(),s=initMemory();await s.write('items/a',{title:'shared'});let release;const gate=new Promise(r=>release=r);const engine=new SyncEngine(s,{...e.api,session:async()=>gate});const first=engine.sync(),second=engine.sync();assert.equal(first,second);release();await second;assert.equal((await engine.counts()).pending,0);assert.equal((await e.api.document('items/a')).revision,1);});
++
++test('linked restaurant and payment survive offline restart and lost acknowledgement without duplicates',async()=>{
++  const e=env(),s=initMemory();
++  await s.writeMany([{path:'items/restaurant',expected:0,value:{title:'Restaurant',day:2,time:'',cat:'food',budget:[],note:''}},{path:'misc/meal',value:{label:'Restaurant',date:'2026-10-31',amt:500,cur:'PHP',pay:'現金',kind:'expense',itineraryId:'restaurant'}}]);
++  assert.equal((await s.all('queue')).length,2);
++  await new SyncEngine(s,{...e.api,session:async()=>{throw new Error('offline');}}).sync();
++  let lost=true;await new SyncEngine(s,{...e.api,push:async op=>{const result=await e.api.push(op);if(lost){lost=false;throw new Error('lost response');}return result;}}).sync();
++  await new SyncEngine(s,e.api).sync();
++  const second=initMemory();await new SyncEngine(second,e.api).sync();
++  assert.equal((await second.get('docs','misc/meal')).itineraryId,'restaurant');
++  assert.deepEqual((await second.get('docs','items/restaurant')).budget,[]);
++  assert.equal((await e.api.document('items/restaurant')).revision,1);
++  assert.equal((await e.api.document('misc/meal')).revision,1);
++  assert.equal((await s.all('queue')).length,0);
++});
++
++test('linked payments stay private and deleting a restaurant does not delete its ledger',async()=>{
++  const e=env();await e.api.push(op('items/restaurant',{title:'Restaurant',day:2,time:'',budget:[]}));
++  await e.api.push(op('misc/meal',{label:'Restaurant',kind:'expense',amt:500,cur:'PHP',pay:'PRIVATE_CARD',note:'PRIVATE_NOTE',itineraryId:'restaurant'}));
++  const share=await(await e.request('shares','POST',{notes:true})).json();
++  const view=await(await e.request('share/view','POST',{token:share.token},null)).json();
++  assert.equal(view.items[0].title,'Restaurant');
++  assert.ok(!/PRIVATE_|itineraryId|500/.test(JSON.stringify(view)));
++  await e.api.push(op('items/restaurant',null,1));
++  assert.equal((await e.api.document('misc/meal')).value.amt,500);
++  await e.api.push(op('items/restaurant',{title:'Restored'},2));
++  await e.api.push(op('misc/meal',null,1));
++  assert.equal((await e.api.document('items/restaurant')).value.title,'Restored');
++});
