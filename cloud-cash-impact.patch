@@ -1,0 +1,158 @@
+diff --git a/docs/cash-impact.md b/docs/cash-impact.md
+new file mode 100644
+index 0000000..31e0053
+--- /dev/null
++++ b/docs/cash-impact.md
+@@ -0,0 +1,17 @@
++# 現金餘額與花費連動
++
++現金餘額以每個幣別最近一次盤點為起點，再加減盤點後的花費、換匯與現金增減。現金付款扣原幣；刷卡與行程預算不扣現金。換匯同時扣付出幣別、加收到幣別，不列入支出。
++
++「補登舊帳：這筆金流已包含在目前的現金盤點」代表不再扣款或加款。新花費或新換匯請勿勾選。已在盤點時納入的紀錄也不會重複扣款。
++
++為避免把排除計算誤認為同步失敗：
++
++- 花費列表直接顯示「已含盤點，不重複調整現金」。
++- 未盤點的幣別會顯示「尚未盤點」，不捏造起始現金。
++- 新增／編輯時，儲存前即時預覽各幣別的餘額變化。
++- 刷卡、付款方式未確認、盤點已含等情形都有文字說明。
++- 離線仍由同一組本機紀錄計算，復網後其他裝置重新計算，不另寫一份可能失準的餘額。
++
++本次未變更盤點起點與統計算法、未自動重新分類既有金流。個別紀錄只有經使用者確認才更正，沿用私人協作紀錄及 revision 衝突保護。新版離線殼版本同步更新，讓已安裝 App 能取得新提示。
++
++驗證：71 項檢查通過，包含現金排除標示、不同幣別盤點狀態、修正換匯後的離線餘額及兩裝置同步。正式建置通過。
+diff --git a/public/sw.js b/public/sw.js
+index bc758fe..294b649 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,4 +1,4 @@
+-const VERSION='journal-sites-shell-v6';
++const VERSION='journal-sites-shell-v7';
+ const CORE=['/trip','/cloud.js','/sync-core.js','/offline-core.js'];
+ const OPTIONAL=['/manifest.webmanifest','/icon-192.png','/icon-512.png','/vendor/leaflet.js','/vendor/html2canvas.min.js','/vendor/jspdf.umd.min.js'];
+ const ASSETS=[...CORE.slice(1),...OPTIONAL];
+diff --git a/public/trip.html b/public/trip.html
+index 20ed27c..b31381a 100644
+--- a/public/trip.html
++++ b/public/trip.html
+@@ -821,6 +821,8 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     <div id="ms-exchange" hidden><label>收到幣別<select class="field" id="ms-to-cur"><option value="PHP">披索 PHP</option><option value="USD">美金 USD</option><option value="TWD">台幣 TWD</option><option value="VND">越南盾 VND</option><option value="JPY" id="ms-to-legacy-jpy" hidden>舊日幣 JPY</option></select></label><label>收到金額<input class="field" id="ms-to-amt" inputmode="decimal"></label><p class="fine" id="ms-rate" role="status"></p></div>
+     <label id="ms-actual-wrap">實際台幣帳單金額（選填，取代估算）<input class="field" id="ms-actual" inputmode="decimal"></label>
+     <label class="checkline"><input type="checkbox" id="ms-cash-included">補登舊帳：這筆金流已包含在目前的現金盤點</label>
++    <p class="fine">新花費／新換匯請勿勾選；勾選代表不再扣款或加款。</p>
++    <p class="fine" id="ms-cash-impact" role="status" aria-live="polite"></p>
+     <label>預估<input class="field" id="ms-hint" placeholder="例如：PHP 500" autocomplete="off"></label>
+     <label>備註<input class="field" id="ms-note" autocomplete="off"></label>
+     <p class="err" id="ms-err" role="alert" hidden></p>
+@@ -1152,6 +1154,15 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     });
+     return { amount: Math.round(amount * 1e8) / 1e8, pending };
+   }
++  function cashRecordImpact(record, snapshots) {
++    return [...MONEY_CURRENCIES, "JPY"].flatMap((cur) => {
++      const effect = cashBalance({ amount: 0, includedIds: [] }, [{ ...record, cashIncluded: false }], cur);
++      if (!effect.amount && !effect.pending) return [];
++      const snap = snapshots?.[cur];
++      const state = record.cashIncluded || (snap?.includedIds || []).includes(record.id) ? "included" : cashBalance(snap, [], cur) ? "active" : "uncounted";
++      return [{ cur, ...effect, state }];
++    });
++  }
+   // END_FINANCE_HELPERS
+ 
+   // BEGIN_SEGMENT_HELPERS
+@@ -1848,6 +1859,25 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+   const summaryText = (records) => financialText(spendingSummary(records, estimateRates()));
+   const budgetText = (list) => financialText(budgetSummary(list, estimateRates()));
+   const snapshotOf = (cur) => ((pcfg.wallet || {}).snapshots || {})[cur];
++  function cashImpactText(record, preview = false) {
++    const impacts = cashRecordImpact(record, pcfg.wallet?.snapshots);
++    if (!impacts.length) return record.kind === "expense" && record.pay === "刷卡" ? "刷卡不扣身上現金。" : "不影響現金餘額。";
++    const next = preview ? [...misc.filter(m => m.id !== record.id), record] : null;
++    return impacts.map(({ cur, state, pending }) => {
++      if (state === "included") return cur + " 已含盤點，不重複調整現金";
++      if (state === "uncounted") return cur + " 尚未盤點，暫無法計算餘額";
++      if (pending) return cur + " 金額／付款方式待確認，餘額暫不完整";
++      if (!preview) return "";
++      const before = cashBalance(snapshotOf(cur), misc, cur), after = cashBalance(snapshotOf(cur), next, cur);
++      return "儲存後現金：" + originalMoney(cur, before.amount) + " → " + originalMoney(cur, after.amount);
++    }).filter(Boolean).join("；");
++  }
++  function updateCashImpact() {
++    const kind = $("ms-kind").value, cur = segVal("ms-cur", "cur");
++    const record = { id: mDraftId, kind, cur, amt: currencyAmount($("ms-amt").value, cur), pay: segVal("ms-pay", "pay"), cashIncluded: $("ms-cash-included").checked,
++      direction: $("ms-direction").value, toCur: $("ms-to-cur").value, toAmt: currencyAmount($("ms-to-amt").value, $("ms-to-cur").value) };
++    $("ms-cash-impact").textContent = cashImpactText(record, true);
++  }
+   function walletHtml() {
+     return '<h3>帳面現金餘額</h3><p class="fine">以實際盤點為起點，計算之後新增的現金花費、換匯及現金增減；刷卡與行程預算不扣現金。補登盤點前的舊帳時，請勾選「已包含在目前的現金盤點」。</p><div class="wallet-grid">' + MONEY_CURRENCIES.map((cur) => {
+       const snap = snapshotOf(cur), balance = cashBalance(snap, misc, cur);
+@@ -1900,7 +1930,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     $("actual-summary").textContent = summaryText(misc);
+     const list = misc.slice().sort((a, b) => miscDayNumber(a) - miscDayNumber(b) || (a.order ?? 0) - (b.order ?? 0));
+     groupedRecords($("misc"), list, miscDayNumber, (m) => {
+-      const sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.kind === "cashflow" ? "現金增減・不列支出" : m.pay, m.note].filter(Boolean).join("｜");
++      const sub = [m.date || m.day || "整趟", m.kind === "exchange" ? "換匯・不列支出" : m.kind === "cashflow" ? "現金增減・不列支出" : m.pay, cashImpactText(m), m.note].filter(Boolean).join("｜");
+       const linked = m.itineraryId && items.find(it => it.id === m.itineraryId);
+       const link = m.itineraryId ? (linked ? '<button type="button" class="btn ghost" data-misc-item="' + esc(linked.id) + '">行程：' + esc(linked.title) + '</button>' : '<small class="fine">原連結行程已移除／尚未同步；花費仍保留。</small>') : '';
+       return '<div class="mitem" data-expense-id="' + esc(m.id) + '"><button type="button" class="mrow" data-misc="' + esc(m.id) + '"><span><b>' + esc(m.label || "（未命名）") + '</b><small>' + esc(sub) + '</small></span><span class="mv">' + esc(miscValueText(m)) + '</span></button>' + link + rcStrip("misc", m) + '</div>';
+@@ -1914,6 +1944,7 @@ details.cat[open] summary .chev { transform: rotate(90deg); }
+     $("ms-direction-wrap").hidden = kind !== "cashflow";
+     $("ms-link-wrap").hidden = kind !== 'expense';
+     $("ms-new-item").hidden = kind !== 'expense' || $("ms-itinerary").value !== '__new';
++    updateCashImpact();
+     const rate = effectiveRate(currencyAmount($("ms-amt").value, segVal("ms-cur", "cur")), currencyAmount($("ms-to-amt").value, $("ms-to-cur").value));
+     $("ms-rate").textContent = segVal("ms-cur", "cur") === $("ms-to-cur").value ? "請選擇不同的付出與收到幣別。" : rate ? "成交匯率：1 " + segVal("ms-cur", "cur") + " = " + rate.toLocaleString("en-US", { maximumFractionDigits: 8 }) + " " + $("ms-to-cur").value : "填入實付與實收金額，自動試算成交匯率。";
+   }
+diff --git a/tests/cloud.test.mjs b/tests/cloud.test.mjs
+index f1b5730..4eae5f0 100644
+--- a/tests/cloud.test.mjs
++++ b/tests/cloud.test.mjs
+@@ -56,3 +56,21 @@ test('linked payments stay private and deleting a restaurant does not delete its
+   await e.api.push(op('misc/meal',null,1));
+   assert.equal((await e.api.document('items/restaurant')).value.title,'Restored');
+ });
++
++
++test('a corrected post-count exchange recomputes both wallets offline and on another device',async()=>{
++  const {runInNewContext}=await import('node:vm'),html=await readFile(new URL('../public/trip.html',import.meta.url),'utf8');
++  const extract=name=>html.split('// BEGIN_'+name)[1].split('// END_'+name)[0],helpers={};
++  runInNewContext(extract('MONEY_ROUTE_HELPERS')+extract('FINANCE_HELPERS')+';this.balance=cashBalance;',helpers);
++  const e=env(),a=initMemory(),b=initMemory(),snapshots={USD:{amount:100,includedIds:[]},PHP:{amount:500,includedIds:[]}};
++  const fx={kind:'exchange',cur:'USD',amt:25,toCur:'PHP',toAmt:1500,cashIncluded:true};
++  await a.write('private/config',{wallet:{snapshots}});await a.write('misc/fx',fx);await new SyncEngine(a,e.api).sync();await new SyncEngine(b,e.api).sync();
++  async function balances(store){const s=(await store.get('docs','private/config')).wallet.snapshots;const rows=(await store.all('docs')).filter(([p])=>p.startsWith('misc/')).map(([p,v])=>({id:p.slice(5),...v}));return ['USD','PHP'].map(cur=>helpers.balance(s[cur],rows,cur).amount);}
++  assert.deepEqual(await balances(b),[100,500]);
++  await a.write('misc/fx',{...fx,cashIncluded:false});
++  await new SyncEngine(a,{...e.api,session:async()=>{throw new Error('offline');}}).sync();
++  assert.deepEqual(await balances(a),[75,2000]);
++  await new SyncEngine(a,e.api).sync();await new SyncEngine(b,e.api).sync();
++  assert.deepEqual(await balances(b),[75,2000]);assert.equal((await b.get('docs','misc/fx')).cashIncluded,false);
++  assert.deepEqual(await a.get('docs','private/config'),{wallet:{snapshots}});
++});
+diff --git a/tests/trip-currency-wallet.mjs b/tests/trip-currency-wallet.mjs
+index 814089d..9dbe269 100644
+--- a/tests/trip-currency-wallet.mjs
++++ b/tests/trip-currency-wallet.mjs
+@@ -4,7 +4,7 @@ import {Script} from 'node:vm';
+ const html=await readFile(new URL('../public/trip.html',import.meta.url),'utf8');
+ const extract=name=>html.match(new RegExp('// BEGIN_'+name+'([\\s\\S]*?)// END_'+name))[1];
+ const sandbox={};
+-new Script(extract('MONEY_ROUTE_HELPERS')+extract('FINANCE_HELPERS')+';this.h={currencyAmount,budgetEntries,budgetSummary,cashBalance,spendingSummary};').runInNewContext(sandbox);
++new Script(extract('MONEY_ROUTE_HELPERS')+extract('FINANCE_HELPERS')+';this.h={currencyAmount,budgetEntries,budgetSummary,cashBalance,cashRecordImpact,spendingSummary};').runInNewContext(sandbox);
+ const h=sandbox.h, clean=x=>JSON.parse(JSON.stringify(x));
+ export const results=[];
+ function check(name,fn){fn();results.push(name);}
+@@ -66,4 +66,13 @@ check('JSON backup roundtrip preserves wallet snapshots and money semantics',()=
+  assert.equal(h.budgetSummary(copy.data.items,{VND:0.0013}).twd,1300);
+  assert.equal(JSON.stringify(data),before);
+ });
++check('cash impact explains exclusion, mixed currency counts and missing payment data',()=>{
++ const fx={id:'fx',kind:'exchange',cur:'USD',amt:25,toCur:'PHP',toAmt:1500,cashIncluded:true};
++ const snapshots={USD:{amount:100,includedIds:[]},PHP:{amount:500,includedIds:['fx']}};
++ assert.deepEqual(clean(h.cashRecordImpact(fx,snapshots)).map(x=>x.state),['included','included']);
++ assert.deepEqual(clean(h.cashRecordImpact({...fx,cashIncluded:false},snapshots)).map(x=>({cur:x.cur,state:x.state,amount:x.amount})),[{cur:'PHP',state:'included',amount:1500},{cur:'USD',state:'active',amount:-25}]);
++ assert.equal(h.cashRecordImpact({...fx,cashIncluded:false},{})[0].state,'uncounted');
++ assert.equal(h.cashRecordImpact({id:'e',cur:'PHP',amt:5,pay:'待確認'},snapshots)[0].pending,1);
++ assert.deepEqual(clean(h.cashRecordImpact({id:'e',cur:'PHP',amt:5,pay:'刷卡'},snapshots)),[]);
++});
+ console.log(results.length+' currency and wallet checks passed');
